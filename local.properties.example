@@ -1,0 +1,5 @@
+# Machine-specific settings. Copy this file as `local.properties` (gitignored) and adjust the values.
+# See docs/build.md for details.
+
+# Your Paper server's plugins/ directory. Optional: without it the build still works and the copy step is skipped.
+pluginsDir=C:/path/to/server/plugins

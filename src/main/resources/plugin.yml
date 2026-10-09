@@ -1,0 +1,9 @@
+name: VersatiaCore
+version: '${version}'
+main: com.github.marcoral.versatia.VersatiaCore
+api-version: '1.21'
+author: Versatia
+description: Core of the Versatia framework.
+libraries:
+  - org.jetbrains.kotlin:kotlin-stdlib:${kotlinVersion}
+  - org.jetbrains.kotlin:kotlin-reflect:${kotlinVersion}

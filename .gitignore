@@ -1,0 +1,33 @@
+# Gradle / Kotlin
+.gradle/
+build/
+.kotlin/
+out/
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# VS Code
+.vscode/
+
+# Eclipse
+.project
+.classpath
+.settings/
+bin/
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# JVM logs and crash dumps
+*.log
+hs_err_pid*
+replay_pid*
+
+# Machine-specific settings (template: local.properties.example)
+local.properties
