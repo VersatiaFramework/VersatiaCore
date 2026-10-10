@@ -177,6 +177,18 @@ is skipped; a path that would escape the data folder is refused. The work is don
 itself, not in a completion action, so the files exist before the bean session creates anything.
 When the JAR has no `resources/` entry the data folder is not even touched.
 
+## Event listeners (`event`)
+
+`RegisterListenersEnhancementProcessor` receives the elements `@RegisterListeners` on
+`VersatiaPlugin` produced for every `Listener` of the plugin. In the completion action of the
+start event, so after the bean session created the beans, it obtains an instance per element: a
+`PluginTarget` is the plugin itself, a `ClassTarget` is the bean of that class when the
+`BeanResolver` has one and otherwise a new instance created through the element's instantiator
+with the constructor parameters resolved by the `BeanResolver` (an `EnhancementException` when the
+plugin has no beans but the constructor needs some). Each instance is registered through
+`plugin.server.pluginManager.registerEvents`; Bukkit unregisters them on disable, so nothing is
+kept in the plugin state.
+
 ## Tests
 
 - `ProcessorLoaderTest` covers loading by name: one instance per class, Kotlin objects, and the

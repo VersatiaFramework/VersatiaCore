@@ -12,7 +12,10 @@ import com.github.marcoral.versatia.engine.descriptor.VersatiaPluginDescriptor
 import java.io.File
 import java.lang.reflect.Proxy
 import java.util.logging.Logger
+import org.bukkit.Server
+import org.bukkit.event.Listener
 import org.bukkit.plugin.Plugin
+import org.bukkit.plugin.PluginManager
 
 /** Shared with sample plugin sources compiled inside tests, so beans can report their creation. */
 object Recorder {
@@ -30,23 +33,44 @@ object Recorder {
 }
 
 /**
- * A `Plugin` that knows its name, logger and data folder and nothing else. A real `JavaPlugin`
- * cannot exist outside a Bukkit plugin class loader. The proxy class is defined in [classLoader],
- * so `plugin.javaClass.classLoader` behaves like a real plugin's.
+ * A `Plugin` that knows its name, logger, data folder and a server whose plugin manager records
+ * listener registrations in [registrations], and nothing else. A real `JavaPlugin` cannot exist
+ * outside a Bukkit plugin class loader. The proxy class is defined in [classLoader], so
+ * `plugin.javaClass.classLoader` behaves like a real plugin's; with [listener] it implements
+ * `Listener` too, like a main class that listens to events.
  */
-fun fakePlugin(name: String, classLoader: ClassLoader = Recorder::class.java.classLoader, dataFolder: File? = null): Plugin {
+fun fakePlugin(
+    name: String,
+    classLoader: ClassLoader = Recorder::class.java.classLoader,
+    dataFolder: File? = null,
+    listener: Boolean = false,
+    registrations: MutableList<Any>? = null,
+): Plugin {
     val logger = Logger.getLogger("test.$name")
-    return Proxy.newProxyInstance(classLoader, arrayOf(Plugin::class.java)) { proxy, method, args ->
+    val interfaces = if (listener) arrayOf(Plugin::class.java, Listener::class.java) else arrayOf(Plugin::class.java)
+    return Proxy.newProxyInstance(classLoader, interfaces) { proxy, method, args ->
         when (method.name) {
             "getName" -> name
             "getLogger" -> logger
             "getDataFolder" -> dataFolder ?: throw UnsupportedOperationException("FakePlugin $name has no data folder")
+            "getServer" -> fakeServer(registrations ?: throw UnsupportedOperationException("FakePlugin $name has no server"))
             "toString" -> "FakePlugin($name)"
             "hashCode" -> System.identityHashCode(proxy)
             "equals" -> proxy === args[0]
             else -> throw UnsupportedOperationException("FakePlugin does not support ${method.name}")
         }
     } as Plugin
+}
+
+/** A `Server` whose plugin manager only records the listeners registered with it. */
+private fun fakeServer(registrations: MutableList<Any>): Server {
+    val pluginManager = Proxy.newProxyInstance(Recorder::class.java.classLoader, arrayOf(PluginManager::class.java)) { _, method, args ->
+        if (method.name == "registerEvents") registrations.add(args[0]).let { null }
+        else throw UnsupportedOperationException("FakePluginManager does not support ${method.name}")
+    } as PluginManager
+    return Proxy.newProxyInstance(Recorder::class.java.classLoader, arrayOf(Server::class.java)) { _, method, _ ->
+        if (method.name == "getPluginManager") pluginManager else throw UnsupportedOperationException("FakeServer does not support ${method.name}")
+    } as Server
 }
 
 /** A context for one event of [pluginName]; [states] keeps the plugin's state across contexts, like the runtime does. */

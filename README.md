@@ -14,7 +14,8 @@ The current version (`0.0.1`) provides dependency injection and lifecycle hooks:
 `@ExposeSingleton` and `@ExposePrototype` beans are created in dependency order when a plugin
 enables and shared across plugins according to their scope; `@AutoInvoke` functions run at the
 declared phase with their parameters injected from those beans; the files a plugin ships under
-`resources/` are extracted into its data folder when it starts.
+`resources/` are extracted into its data folder when it starts, and its Bukkit listeners are
+registered.
 
 ## Requirements
 
@@ -56,6 +57,7 @@ still works and the copy step is skipped. The path can also be passed for a sing
 - `src/main/kotlin/.../di/` – the bean scope processors and the per-plugin bean sessions
 - `src/main/kotlin/.../lifecycle/` – the `@AutoInvoke` processor
 - `src/main/kotlin/.../resources/` – the `@ExtractResources` processor
+- `src/main/kotlin/.../event/` – the `@RegisterListeners` processor
 - `src/test/kotlin/` – unit tests and the end-to-end dependency injection test
 - `src/main/resources/plugin.yml` – plugin metadata (version and Kotlin version are filled in by Gradle)
 - `local.properties.example` – template for local settings
