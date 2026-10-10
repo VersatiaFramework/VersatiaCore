@@ -7,6 +7,7 @@ import com.github.marcoral.versatia.PluginEnhancer
 import com.github.marcoral.versatia.PluginStates
 import com.github.marcoral.versatia.ProcessorLoader
 import com.github.marcoral.versatia.di.BeanProcessors
+import com.github.marcoral.versatia.di.PluginBean
 import com.github.marcoral.versatia.engine.descriptor.AnnotationOccurrence
 import com.github.marcoral.versatia.engine.descriptor.ClassTarget
 import com.github.marcoral.versatia.engine.descriptor.EnhancedElement
@@ -90,7 +91,7 @@ class AutoInvokeTest {
     private fun pluginElement(mainName: String = "com.example.Main") = EnhancedElement(
         BeanProcessors.PLUGIN,
         EventType.PLUGIN_START_ONLY,
-        null,
+        AnnotationOccurrence(PluginBean::class.java.name),
         PluginTarget(mainName, listOf(mainName, Plugin::class.qualifiedName!!), emptyList()),
     )
 

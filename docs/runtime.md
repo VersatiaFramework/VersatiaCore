@@ -100,7 +100,7 @@ from the attributes, and each constructor `Parameter` becomes a `Dependency` of 
 `@Qualifier` on it.
 
 `PluginBeanEnhancementProcessor` receives the descriptor's `PluginTarget`: the plugin's main
-class. `BeanDefinition.plugin` adopts the `Plugin` from the context under the fixed name `plugin`
+class, sent there by `@PluginBean` on `VersatiaPlugin`. `BeanDefinition.plugin` adopts the `Plugin` from the context under the fixed name `plugin`
 (`BeanNames.PLUGIN`) with an instantiator that returns it, so the instance Bukkit created is
 injectable under its own type and every supertype, is never exposed, and nothing is constructed for
 it. The scope processors accept only `ClassTarget`s, and a descriptor carrying the main class more
@@ -165,6 +165,17 @@ the processor:
 
 Because the plugin's beans are kept for its whole lifetime (above), this works at every phase, not
 only at start.
+
+## Plugin resources (`resources`)
+
+`ExtractResourcesEnhancementProcessor` receives the `PluginTarget` produced by `@ExtractResources`
+on `VersatiaPlugin`. It locates the plugin's code through the main class
+(`Class.forName(className, false, loader).protectionDomain.codeSource`), which is the plugin JAR
+on a server and a class directory in tests, and copies every file under its `resources/` entry
+into `plugin.dataFolder`, keeping the paths below that entry. A destination that already exists
+is skipped; a path that would escape the data folder is refused. The work is done in `process`
+itself, not in a completion action, so the files exist before the bean session creates anything.
+When the JAR has no `resources/` entry the data folder is not even touched.
 
 ## Tests
 

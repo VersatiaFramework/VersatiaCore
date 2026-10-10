@@ -9,6 +9,7 @@ import com.github.marcoral.versatia.di.Qualifier
 import com.github.marcoral.versatia.engine.descriptor.AnnotationOccurrence
 import com.github.marcoral.versatia.engine.descriptor.EnhancedElement
 import com.github.marcoral.versatia.engine.descriptor.VersatiaPluginDescriptor
+import java.io.File
 import java.lang.reflect.Proxy
 import java.util.logging.Logger
 import org.bukkit.plugin.Plugin
@@ -29,16 +30,17 @@ object Recorder {
 }
 
 /**
- * A `Plugin` that knows its name and logger and nothing else. A real `JavaPlugin` cannot exist
- * outside a Bukkit plugin class loader. The proxy class is defined in [classLoader], so
- * `plugin.javaClass.classLoader` behaves like a real plugin's.
+ * A `Plugin` that knows its name, logger and data folder and nothing else. A real `JavaPlugin`
+ * cannot exist outside a Bukkit plugin class loader. The proxy class is defined in [classLoader],
+ * so `plugin.javaClass.classLoader` behaves like a real plugin's.
  */
-fun fakePlugin(name: String, classLoader: ClassLoader = Recorder::class.java.classLoader): Plugin {
+fun fakePlugin(name: String, classLoader: ClassLoader = Recorder::class.java.classLoader, dataFolder: File? = null): Plugin {
     val logger = Logger.getLogger("test.$name")
     return Proxy.newProxyInstance(classLoader, arrayOf(Plugin::class.java)) { proxy, method, args ->
         when (method.name) {
             "getName" -> name
             "getLogger" -> logger
+            "getDataFolder" -> dataFolder ?: throw UnsupportedOperationException("FakePlugin $name has no data folder")
             "toString" -> "FakePlugin($name)"
             "hashCode" -> System.identityHashCode(proxy)
             "equals" -> proxy === args[0]

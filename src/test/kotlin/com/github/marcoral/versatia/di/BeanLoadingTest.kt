@@ -388,7 +388,7 @@ class BeanLoadingTest {
     private val mainClass = EnhancedElement(
         BeanProcessors.PLUGIN,
         EventType.PLUGIN_START_ONLY,
-        null,
+        AnnotationOccurrence(PluginBean::class.java.name),
         PluginTarget("com.example.AlphaPlugin", listOf("com.example.AlphaPlugin", pluginName), emptyList()),
     )
     private val owner = element<Owner>(
