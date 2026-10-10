@@ -10,6 +10,14 @@ plugin's descriptor by name and hands its elements to enhancement processors. Se
 [docs/architecture.md](docs/architecture.md) for the overall design and
 [docs/runtime.md](docs/runtime.md) for how plugins are enhanced.
 
+## A private repository
+
+Unlike VersatiaAPI, the documentation and the examples, this repository is **private**: the
+runtime is the part of Versatia that is protected and may be offered commercially in the future.
+Access to the sources is granted individually by the Versatia team; everybody else uses VersatiaCore
+as a plugin JAR, which is all a server or a plugin author needs. Nothing a plugin compiles against
+lives here, so the public VersatiaAPI and the documentation describe the runtime's behaviour in full.
+
 The current version (`0.0.1`) provides dependency injection and lifecycle hooks: `@LocalBean`,
 `@ExposeSingleton` and `@ExposePrototype` beans are created in dependency order when a plugin
 enables and shared across plugins according to their scope; `@AutoInvoke` functions run at the
