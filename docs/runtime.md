@@ -100,7 +100,8 @@ plugin's descriptor at `LifecycleEvent`s and dispatches only the elements whose 
 element whose target records the attribute is dispatched only while every plugin it names is
 enabled (`PluginManager.isPluginEnabled`); for a `FunctionTarget` the `classAnnotations` recorded
 from its declaring class count too, so a conditional bean or `object` takes its `@AutoInvoke`
-functions with it. Skipped elements are logged at `FINE`. The filter reads the recorded attribute and knows
+functions with it. The skipped classes and the plugins they wait for are logged at `INFO` when the plugin starts
+(`Skipped VersatiaCommand: CommandAPI is not installed`), so an administrator sees why a command is missing. The filter reads the recorded attribute and knows
 no feature; the class behind a skipped element is never loaded, which is what lets it reference
 an optional plugin's classes.
 

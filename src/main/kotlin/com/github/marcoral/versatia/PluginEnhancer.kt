@@ -17,8 +17,10 @@ class PluginEnhancer(private val processors: ProcessorLoader) {
     fun enhance(descriptor: VersatiaPluginDescriptor, context: DefaultEnhancementContext) {
         val missing = descriptor.elements.filter { it.phase.appliesTo(context.event) }.map { it to missingPlugins(it, context) }
         val skipped = missing.filter { (_, plugins) -> plugins.isNotEmpty() }
-        if (skipped.isNotEmpty()) context.plugin.logger.fine {
-            "Skipped ${skipped.size} elements whose plugins are missing: " + skipped.joinToString { (element, plugins) -> "${element.target.className} (${plugins.joinToString()})" }
+        if (skipped.isNotEmpty() && context.event == LifecycleEvent.START) {
+            val classes = skipped.map { (element, _) -> element.target.className.substringAfterLast('.') }.distinct()
+            val plugins = skipped.flatMap { (_, plugins) -> plugins }.distinct()
+            context.plugin.logger.info("Skipped ${classes.joinToString()}: ${plugins.joinToString()} ${if (plugins.size == 1) "is" else "are"} not installed")
         }
         val groups = missing.filter { (_, plugins) -> plugins.isEmpty() }.map { (element, _) -> element }.groupBy { it.processorClass }
         val loaded = groups.keys.associateWith { processors.load(it, context) }
