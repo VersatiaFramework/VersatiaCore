@@ -102,6 +102,36 @@ class StrictSession(val plugin: Any)
 
 class StrictHolder(val session: StrictSession)
 
+class Prices : Reloadable {
+    override fun reload() = Recorder.record("Prices.reload", this)
+}
+
+class Bank(val plugin: Plugin) : Reloadable {
+    override fun reload() = Recorder.record("Bank.reload for ${plugin.name}", this)
+}
+
+class Teller(val bank: Bank, val prices: Prices) : Reloadable {
+    override fun reload() = Recorder.record("Teller.reload", this)
+}
+
+class Broken : Reloadable {
+    override fun reload() = throw IllegalStateException("file missing")
+}
+
+class Wallet(val ticket: Ticket) {
+    init {
+        Recorder.record("Wallet", this)
+    }
+}
+
+class Pass(val ticket: Ticket) {
+    init {
+        Recorder.record("Pass", this)
+    }
+}
+
+class Traveller(val ticket: Ticket, val wallet: Wallet, val pass: Pass)
+
 /** Unit tests of the runtime half of dependency injection with hand-written descriptors. */
 class BeanLoadingTest {
     private lateinit var states: PluginStates
@@ -329,6 +359,71 @@ class BeanLoadingTest {
         assertEquals(emptyList(), Recorder.names(), "nothing is created at stop")
     }
 
+    private val prices = element<Prices>(BeanProcessors.LOCAL, instantiator = Instantiator.Direct { Prices() })
+    private val bank = element<Bank>(BeanProcessors.EXPOSE_PROTOTYPE, dependencies = listOf(Plugin::class.qualifiedName!!), instantiator = Instantiator.Direct { Bank(it[0] as Plugin) })
+    private val teller = element<Teller>(
+        BeanProcessors.LOCAL,
+        dependencies = listOf(Bank::class.qualifiedName!!, Prices::class.qualifiedName!!),
+        instantiator = Instantiator.Direct { Teller(it[0] as Bank, it[1] as Prices) },
+    )
+
+    @Test
+    fun `Reloadable beans load when created and again at every reload of their plugin, in creation order`() {
+        val alpha = context("Alpha")
+        enhancer.enhance(descriptor(mainClass, bank), alpha)
+        assertEquals(listOf("Bank.reload for Alpha"), Recorder.names(), "the owner's own instance loads at creation")
+
+        Recorder.reset()
+        enhancer.enhance(descriptor(mainClass, teller, prices), context("Beta"))
+        assertEquals(listOf("Bank.reload for Beta", "Prices.reload", "Teller.reload"), Recorder.names(), "each bean loads right after its creation, dependencies first")
+
+        Recorder.reset()
+        enhancer.enhance(descriptor(mainClass, teller, prices), context("Beta", LifecycleEvent.RELOAD))
+        assertEquals(listOf("Bank.reload for Beta", "Prices.reload", "Teller.reload"), Recorder.names(), "a reload runs them all again in the same order")
+
+        Recorder.reset()
+        enhancer.enhance(descriptor(mainClass, bank), context("Alpha", LifecycleEvent.RELOAD))
+        assertEquals(listOf("Bank.reload for Alpha"), Recorder.names(), "the owner reloads its own instance only, not the ones made for consumers")
+    }
+
+    @Test
+    fun `a failing reload names the plugin and the bean`() {
+        val broken = element<Broken>(BeanProcessors.LOCAL, instantiator = Instantiator.Direct { Broken() })
+
+        val error = assertFailsWith<EnhancementException> { enhancer.enhance(descriptor(mainClass, broken), context("Alpha")) }
+
+        assertEquals("Plugin Alpha: ${Broken::class.qualifiedName} failed to reload", error.message)
+        assertEquals("file missing", error.cause?.message)
+    }
+
+    @Test
+    fun `a prototype depending on a prototype receives the instance made for the consumer`() {
+        val wallet = element<Wallet>(BeanProcessors.EXPOSE_PROTOTYPE, dependencies = listOf(ticketName), instantiator = Instantiator.Direct { Wallet(it[0] as Ticket) })
+        val pass = element<Pass>(BeanProcessors.EXPOSE_PROTOTYPE, dependencies = listOf(ticketName), instantiator = Instantiator.Direct { Pass(it[0] as Ticket) })
+        val traveller = element<Traveller>(
+            BeanProcessors.LOCAL,
+            dependencies = listOf(ticketName, Wallet::class.qualifiedName!!, Pass::class.qualifiedName!!),
+            instantiator = Instantiator.Direct { Traveller(it[0] as Ticket, it[1] as Wallet, it[2] as Pass) },
+        )
+        enhancer.enhance(descriptor(exposedClock, prototypeTicket, wallet), context("Alpha"))
+        enhancer.enhance(descriptor(pass), context("Gamma"))
+        val alphaWallet = Recorder.instanceOf("Wallet") as Wallet
+        val gammaPass = Recorder.instanceOf("Pass") as Pass
+        assertSame(Recorder.events.first { it.first == "Ticket" }.second, alphaWallet.ticket, "the owner's own wallet takes the owner's ticket")
+        Recorder.reset()
+
+        enhancer.enhance(descriptor(traveller), context("Delta"))
+
+        val tickets = Recorder.events.filter { it.first == "Ticket" }.map { it.second }
+        assertEquals(1, tickets.size, "one ticket for Delta")
+        val deltaWallet = Recorder.instanceOf("Wallet") as Wallet
+        val deltaPass = Recorder.instanceOf("Pass") as Pass
+        assertSame(tickets.single(), deltaWallet.ticket, "a prototype of the same owner is re-resolved for the consumer")
+        assertSame(tickets.single(), deltaPass.ticket, "so is a prototype exposed by a third plugin")
+        assertNotSame(alphaWallet.ticket, deltaWallet.ticket)
+        assertNotSame(gammaPass.ticket, deltaPass.ticket)
+    }
+
     private val grumpyGreeter = element<GrumpyGreeter>(
         BeanProcessors.LOCAL,
         dependencies = listOf(clockName),
@@ -387,7 +482,7 @@ class BeanLoadingTest {
     private val pluginName = Plugin::class.qualifiedName!!
     private val mainClass = EnhancedElement(
         BeanProcessors.PLUGIN,
-        EventType.PLUGIN_START_ONLY,
+        EventType.PLUGIN_RELOAD_OR_START,
         AnnotationOccurrence(PluginBean::class.java.name),
         PluginTarget("com.example.AlphaPlugin", listOf("com.example.AlphaPlugin", pluginName), emptyList()),
     )

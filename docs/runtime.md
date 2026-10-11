@@ -136,7 +136,20 @@ class, sent there by `@PluginBean` on `VersatiaPlugin`. `BeanDefinition.plugin` 
 (`BeanNames.PLUGIN`) with an instantiator that returns it, so the instance Bukkit created is
 injectable under its own type and every supertype, is never exposed, and nothing is constructed for
 it. The scope processors accept only `ClassTarget`s, and a descriptor carrying the main class more
-than once is refused.
+than once is refused. The element's phase is `PLUGIN_RELOAD_OR_START`: at the reload event the
+processor calls `PluginBeanSession.reload()` instead, which is how reloadable beans get their turn
+(below).
+
+### Reloadable beans
+
+The session *adopts* every instance it makes or obtains: its own beans and the prototype instances
+made for its plugin. An adopted instance implementing `Reloadable` is reloaded right away, so a
+bean that reads files in `reload()` is ready as soon as it exists, and remembered in creation
+order. `PluginBeanSession.reload()` runs them all again in that order; because the plugin-bean
+processor does this synchronously while `@AutoInvoke` runs in a completion action, reload-phase
+functions always see reloaded beans. A throwing `reload()` is wrapped as
+`Plugin X: <class> failed to reload`. Exposed singletons are adopted by their owner only, so a
+consumer's reload never touches them.
 
 ### Resolution rules
 
@@ -164,10 +177,22 @@ still detected and reported.
 | `@LocalBean`         | kept in the plugin's session, injectable only into that plugin                |
 | the main class       | a local bean backed by the existing plugin instance; same visibility as above |
 | `@ExposeSingleton`   | the instance is registered in `ExposedBeanRegistry` and handed to every later plugin that asks |
-| `@ExposePrototype`   | a factory is registered; it creates a **new instance per consuming plugin**, reusing the constructor arguments resolved when the owner started, except that a parameter the owner's plugin bean satisfied receives the consuming plugin (checked with `isInstance` against the parameter type, since the compile-time step only sees `VersatiaPlugin`s) |
+| `@ExposePrototype`   | a factory is registered; it creates a **new instance per consuming plugin** from the constructor arguments resolved when the owner started, except for the arguments that depend on the consumer (below) |
 
 A prototype used by two beans (or functions) of the same plugin is created once for that plugin.
 The owning plugin's own instance is never handed out.
+
+When the owner starts, `PluginBeanSession.sourceOf` classifies each constructor parameter of a
+prototype once; the factory then builds an instance for a consumer from:
+
+| The owner resolved the parameter to   | The consumer's instance receives                                    |
+|---------------------------------------|---------------------------------------------------------------------|
+| its plugin bean                       | the consuming plugin, checked with `isInstance` against the parameter type (the compile-time step only sees `VersatiaPlugin`s) |
+| a prototype, its own or an exposed one | the instance of that prototype made for the consumer, resolved by the consumer's session with its own rules, so the consumer's beans share it |
+| anything else                         | the owner's argument                                                |
+
+The factory receives the consumer's resolution as a function, so a prototype built from other
+prototypes (a `Messages` taking a `Text`, say) forms a chain made entirely for the consumer.
 
 ### Lifetime
 
@@ -176,7 +201,8 @@ is created when the plugin starts and closed when its state is dropped after its
 elements ran, which withdraws its entries from `ExposedBeanRegistry`. Nothing is tied to server
 load, so a plugin enabled later (for example through a plugin manager) sees the exposed beans of
 the plugins running at that moment, and re-enabling a plugin replaces its beans. Beans are never
-re-created on reload; reload-phase functions receive the retained instances.
+re-created on reload; `Reloadable` ones are reloaded and reload-phase functions receive the
+retained instances.
 
 ## Auto-invoked functions (`lifecycle`)
 
@@ -226,7 +252,8 @@ kept in the plugin state.
 - `ProcessorLoaderTest` covers loading by name: one instance per class, Kotlin objects, and the
   errors for a missing class, a class that is no processor and one without a usable constructor.
 - `BeanLoadingTest` drives `PluginEnhancer` with hand-written descriptors: creation order,
-  isolation of local beans, singleton sharing, prototype semantics, ambiguity, lifetime bound to the
+  isolation of local beans, singleton sharing, prototype semantics including the consumer's plugin
+  and prototype chains, `Reloadable` at creation and at reload, ambiguity, lifetime bound to the
   plugin state, reflective instantiation of a private class, the plugin instance as a bean, phases,
   missing processors.
 - `AutoInvokeTest` covers the receivers (plugin, object, bean), parameter injection from local and

@@ -26,7 +26,7 @@ object VersatiaDescriptor : VersatiaPluginDescriptor {
     override val elements = listOf(
         EnhancedElement(
             BeanProcessors.PLUGIN,
-            EventType.PLUGIN_START_ONLY,
+            EventType.PLUGIN_RELOAD_OR_START,
             AnnotationOccurrence(PluginBean::class.java.name),
             PluginTarget(MAIN, listOf(MAIN, Plugin::class.qualifiedName!!), listOf(AnnotationOccurrence(FriendlyName::class.java.name, mapOf("value" to "ticker")))),
         ),

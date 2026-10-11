@@ -51,7 +51,7 @@ class PluginEnhancerTest {
 
     private val pluginBean = EnhancedElement(
         BeanProcessors.PLUGIN,
-        EventType.PLUGIN_START_ONLY,
+        EventType.PLUGIN_RELOAD_OR_START,
         AnnotationOccurrence(PluginBean::class.java.name),
         PluginTarget(mainName, listOf(mainName, Plugin::class.qualifiedName!!), emptyList()),
     )

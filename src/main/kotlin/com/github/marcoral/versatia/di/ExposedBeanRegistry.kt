@@ -35,29 +35,28 @@ sealed class ExposedBean(
     val assignableTypes: List<String>,
     val owner: String,
 ) {
-    /** The instance for [consumer], the plugin asking for the bean. */
-    abstract fun obtain(consumer: Plugin): Any
-
     class Singleton(
         className: String,
         name: String,
         primary: Boolean,
         assignableTypes: List<String>,
         owner: String,
-        private val instance: Any,
-    ) : ExposedBean(className, name, primary, assignableTypes, owner) {
-        override fun obtain(consumer: Plugin) = instance
-    }
+        val instance: Any,
+    ) : ExposedBean(className, name, primary, assignableTypes, owner)
 
+    /**
+     * Makes an instance for a consuming plugin; the factory resolves the arguments that depend on
+     * the consumer through `resolve`, the consumer's own dependency resolution.
+     */
     class Prototype(
         className: String,
         name: String,
         primary: Boolean,
         assignableTypes: List<String>,
         owner: String,
-        private val factory: (Plugin) -> Any,
+        private val factory: (consumer: Plugin, resolve: (Dependency) -> Any) -> Any,
     ) : ExposedBean(className, name, primary, assignableTypes, owner) {
-        override fun obtain(consumer: Plugin) = factory(consumer)
+        fun obtain(consumer: Plugin, resolve: (Dependency) -> Any) = factory(consumer, resolve)
     }
 
     override fun toString() = "\"$name\" ($className from $owner)"

@@ -90,7 +90,7 @@ class AutoInvokeTest {
     /** The element every real descriptor starts with; it gives the plugin its bean container. */
     private fun pluginElement(mainName: String = "com.example.Main") = EnhancedElement(
         BeanProcessors.PLUGIN,
-        EventType.PLUGIN_START_ONLY,
+        EventType.PLUGIN_RELOAD_OR_START,
         AnnotationOccurrence(PluginBean::class.java.name),
         PluginTarget(mainName, listOf(mainName, Plugin::class.qualifiedName!!), emptyList()),
     )
