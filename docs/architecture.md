@@ -43,7 +43,7 @@ defines what is generated, VersatiaCore must be able to read it.
 - Construct components and resolve their dependencies from the descriptor, without runtime
   discovery.
 - Unpack resources and perform other repetitive `onEnable` setup on behalf of plugins.
-- Expose the services that back the VersatiaAPI API.
+- Expose the services that back the VersatiaAPI API, and reload plugins on command.
 
 ## Enhancements and enhancement processors
 
@@ -86,6 +86,9 @@ else is special about them. This fixes the division of labour:
 - **A new feature adds only definitions to VersatiaAPI** (annotations, enums, processor ids) **and
   only processors to VersatiaCore.** Nothing else changes: not the loader, not the dispatcher,
   not the main class.
+- **VersatiaCore eats its own food.** The runtime enhances itself through a descriptor generated
+  by the same KSP processor, so what it needs beyond the pipeline, today the `/versatia` command,
+  is declared with the API like a plugin would and gated with `@ConditionalOnPlugin`.
 - **Packages are organised by feature**, as if API, Core and the compile-time step were slices of
   one monolith: a feature package holds the feature's definitions in VersatiaAPI and its processors
   in VersatiaCore. The enhancement mechanism and the plugin bootstrap (`VersatiaPlugin`,

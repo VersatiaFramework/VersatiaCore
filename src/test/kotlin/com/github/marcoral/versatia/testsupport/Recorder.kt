@@ -15,6 +15,7 @@ import java.util.logging.Logger
 import org.bukkit.Server
 import org.bukkit.event.Listener
 import org.bukkit.plugin.Plugin
+import org.bukkit.plugin.PluginDescriptionFile
 import org.bukkit.plugin.PluginManager
 
 /** Shared with sample plugin sources compiled inside tests, so beans can report their creation. */
@@ -33,11 +34,12 @@ object Recorder {
 }
 
 /**
- * A `Plugin` that knows its name, logger, data folder and a server whose plugin manager records
- * listener registrations in [registrations], and nothing else. A real `JavaPlugin` cannot exist
- * outside a Bukkit plugin class loader. The proxy class is defined in [classLoader], so
- * `plugin.javaClass.classLoader` behaves like a real plugin's; with [listener] it implements
- * `Listener` too, like a main class that listens to events.
+ * A `Plugin` that knows its name, logger, data folder, main class and a server whose plugin
+ * manager records listener registrations in [registrations] and reports [enabledPlugins] as
+ * enabled, and nothing else. A real `JavaPlugin` cannot exist outside a Bukkit plugin class
+ * loader. The proxy class is defined in [classLoader], so `plugin.javaClass.classLoader` behaves
+ * like a real plugin's; with [listener] it implements `Listener` too, like a main class that
+ * listens to events.
  */
 fun fakePlugin(
     name: String,
@@ -45,6 +47,8 @@ fun fakePlugin(
     dataFolder: File? = null,
     listener: Boolean = false,
     registrations: MutableList<Any>? = null,
+    main: String? = null,
+    enabledPlugins: Set<String> = emptySet(),
 ): Plugin {
     val logger = Logger.getLogger("test.$name")
     val interfaces = if (listener) arrayOf(Plugin::class.java, Listener::class.java) else arrayOf(Plugin::class.java)
@@ -53,7 +57,9 @@ fun fakePlugin(
             "getName" -> name
             "getLogger" -> logger
             "getDataFolder" -> dataFolder ?: throw UnsupportedOperationException("FakePlugin $name has no data folder")
-            "getServer" -> fakeServer(registrations ?: throw UnsupportedOperationException("FakePlugin $name has no server"))
+            "getDescription" -> PluginDescriptionFile(name, "0.0.1", main ?: throw UnsupportedOperationException("FakePlugin $name has no main class"))
+            "getServer" -> fakeServer(registrations ?: mutableListOf(), enabledPlugins)
+            "isEnabled" -> true
             "toString" -> "FakePlugin($name)"
             "hashCode" -> System.identityHashCode(proxy)
             "equals" -> proxy === args[0]
@@ -62,11 +68,14 @@ fun fakePlugin(
     } as Plugin
 }
 
-/** A `Server` whose plugin manager only records the listeners registered with it. */
-private fun fakeServer(registrations: MutableList<Any>): Server {
+/** A `Server` whose plugin manager only records the listeners registered with it and knows which plugins are enabled. */
+private fun fakeServer(registrations: MutableList<Any>, enabledPlugins: Set<String>): Server {
     val pluginManager = Proxy.newProxyInstance(Recorder::class.java.classLoader, arrayOf(PluginManager::class.java)) { _, method, args ->
-        if (method.name == "registerEvents") registrations.add(args[0]).let { null }
-        else throw UnsupportedOperationException("FakePluginManager does not support ${method.name}")
+        when {
+            method.name == "registerEvents" -> registrations.add(args[0]).let { null }
+            method.name == "isPluginEnabled" && args[0] is String -> args[0] in enabledPlugins
+            else -> throw UnsupportedOperationException("FakePluginManager does not support ${method.name}")
+        }
     } as PluginManager
     return Proxy.newProxyInstance(Recorder::class.java.classLoader, arrayOf(Server::class.java)) { _, method, _ ->
         if (method.name == "getPluginManager") pluginManager else throw UnsupportedOperationException("FakeServer does not support ${method.name}")

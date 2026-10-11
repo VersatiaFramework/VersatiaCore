@@ -28,10 +28,26 @@ VersatiaAPI is resolved from the local Maven repository (`mavenLocal()`), where 
 publishes it with `./gradlew publishToMavenLocal`. The two builds share nothing else; from this
 project's point of view VersatiaAPI is an ordinary external library.
 
+### VersatiaCore enhances itself
+
+The KSP plugin and `VersatiaAPI-ksp` are applied to the main source set exactly as in a plugin
+build, so `com.github.marcoral.versatia.VersatiaDescriptor` is generated for VersatiaCore's own
+main class. That is how the `/versatia` command is declared: as an auto-invoked function, not as
+code in `onEnable`.
+
+### CommandAPI
+
+The CommandAPI plugin is a `softdepend:`, so `commandapi-paper-core` is `compileOnly`: the
+classes come from the CommandAPI plugin on the server, when it is there. Its Kotlin DSL
+(`commandapi-kotlin-paper` and what it pulls in) is a few extension functions that CommandAPI
+does not ship in its plugin, so they are bundled into the JAR like the VersatiaAPI classes. The
+DSL only references CommandAPI's API, and the command object is loaded only when the plugin is
+present, so no mapping or class-loading issue arises without it.
+
 ### VersatiaAPI classes at runtime
 
-The `jar` task unpacks the `VersatiaAPI-*` JARs from the runtime classpath into the plugin JAR
-(`kotlin_module` files excluded). VersatiaAPI is not published to a remote repository, so
+The `jar` task unpacks the `VersatiaAPI-*` and `commandapi-kotlin-*` JARs from the runtime
+classpath into the plugin JAR (`kotlin_module` files excluded). VersatiaAPI is not published to a remote repository, so
 Paper's `libraries:` mechanism cannot fetch it; `kotlin-stdlib` and `kotlin-reflect` are left to
 `libraries:` as before. Plugins declare `depend: [VersatiaCore]`, which makes Bukkit's plugin class
 loader resolve VersatiaAPI classes from this JAR, so plugins must not bundle their own copy.

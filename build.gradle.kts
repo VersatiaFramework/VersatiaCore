@@ -5,12 +5,14 @@ import java.util.Properties
 
 plugins {
     kotlin("jvm") version "2.4.20"
+    id("com.google.devtools.ksp") version "2.3.12"
 }
 
 group = "com.github.marcoral.versatia"
 version = "0.0.1"
 
 val apiVersion = "0.0.1"
+val commandApiVersion = "12.1.0"
 
 repositories {
     // VersatiaAPI is consumed from the local Maven repository (`./gradlew publishToMavenLocal` there)
@@ -23,6 +25,11 @@ repositories {
 // Paper API and the Kotlin standard library are inherited from VersatiaAPI; see docs/build.md
 dependencies {
     implementation("com.github.marcoral.versatia:VersatiaAPI:$apiVersion")
+    // VersatiaCore enhances itself, so its descriptor is generated like a plugin's; see docs/build.md
+    ksp("com.github.marcoral.versatia:VersatiaAPI-ksp:$apiVersion")
+    // The CommandAPI plugin is a soft dependency on the server; only its Kotlin DSL ships in this JAR
+    compileOnly("dev.jorel:commandapi-paper-core:$commandApiVersion")
+    implementation("dev.jorel:commandapi-kotlin-paper:$commandApiVersion")
 
     testImplementation(kotlin("test"))
     // Compiles sample plugins with the real KSP processor inside tests; see docs/runtime.md
@@ -61,14 +68,14 @@ tasks.processResources {
     }
 }
 
-// VersatiaAPI classes ship inside this JAR; see docs/build.md
+// VersatiaAPI classes and the CommandAPI Kotlin DSL ship inside this JAR; see docs/build.md
 val archives = serviceOf<ArchiveOperations>()
-val apiClasses = configurations.runtimeClasspath.map { classpath ->
-    classpath.filter { it.name.startsWith("VersatiaAPI-") }.map { archives.zipTree(it) }
+val bundledClasses = configurations.runtimeClasspath.map { classpath ->
+    classpath.filter { it.name.startsWith("VersatiaAPI-") || it.name.startsWith("commandapi-kotlin-") }.map { archives.zipTree(it) }
 }
 
 tasks.jar {
-    from(apiClasses)
+    from(bundledClasses)
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     exclude("META-INF/*.kotlin_module")
 }

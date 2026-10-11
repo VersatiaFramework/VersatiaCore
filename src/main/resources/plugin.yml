@@ -7,3 +7,10 @@ description: Core of the Versatia framework.
 libraries:
   - org.jetbrains.kotlin:kotlin-stdlib:${kotlinVersion}
   - org.jetbrains.kotlin:kotlin-reflect:${kotlinVersion}
+# Optional: with the CommandAPI plugin installed, VersatiaCore registers /versatia
+softdepend:
+  - CommandAPI
+permissions:
+  versatia.core.command.reload:
+    description: Reloads Versatia plugins with /versatia reload.
+    default: op
