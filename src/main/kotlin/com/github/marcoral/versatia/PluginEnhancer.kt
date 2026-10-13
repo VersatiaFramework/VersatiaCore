@@ -5,6 +5,7 @@ import com.github.marcoral.versatia.engine.descriptor.ElementTarget
 import com.github.marcoral.versatia.engine.descriptor.EnhancedElement
 import com.github.marcoral.versatia.engine.descriptor.FunctionTarget
 import com.github.marcoral.versatia.engine.descriptor.PluginTarget
+import com.github.marcoral.versatia.engine.descriptor.PropertyTarget
 import com.github.marcoral.versatia.engine.descriptor.VersatiaPluginDescriptor
 
 /**
@@ -28,7 +29,7 @@ class PluginEnhancer(private val processors: ProcessorLoader) {
         context.runCompletionActions()
     }
 
-    /** The plugins [element] needs that are not enabled: those of its own condition and, for a function, of its class's. */
+    /** The plugins [element] needs that are not enabled: those of its own condition and, for a function or property, of its class's. */
     private fun missingPlugins(element: EnhancedElement, context: EnhancementContext) =
         requiredPlugins(element.target).filterNot { context.plugin.server.pluginManager.isPluginEnabled(it) }
 
@@ -36,6 +37,7 @@ class PluginEnhancer(private val processors: ProcessorLoader) {
         val annotations = when (target) {
             is ClassTarget -> target.annotations
             is FunctionTarget -> target.annotations + target.classAnnotations
+            is PropertyTarget -> target.annotations + target.classAnnotations
             is PluginTarget -> target.annotations
         }
         return annotations.filter { it.annotationClass == ConditionalOnPlugin::class.java.name }

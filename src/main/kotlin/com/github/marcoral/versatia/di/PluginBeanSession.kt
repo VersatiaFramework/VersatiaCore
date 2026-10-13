@@ -23,6 +23,7 @@ class PluginBeanSession(
     private val prototypeInstances = HashMap<ExposedBean, Any>()
     private val reloadables = LinkedHashSet<Reloadable>()
     private var created: LinkedHashMap<BeanDefinition, Any>? = null
+    private var loaded = false
     private var instantiationScheduled = false
 
     /** Declares beans; they are created once every processor has seen the plugin's start elements. */
@@ -35,12 +36,16 @@ class PluginBeanSession(
             context.onPluginEnhanced {
                 val instances = instantiateAll()
                 context.plugin.logger.fine { "Created ${instances.size} beans: ${instances.values.joinToString { it.javaClass.name }}" }
+                reload()
             }
         }
     }
 
     /** Reloads every [Reloadable] of the session in creation order: the plugin's own beans and the prototype instances made for it. */
-    fun reload() = reloadables.forEach(::reload)
+    fun reload() {
+        reloadables.forEach(::reload)
+        loaded = true
+    }
 
     /** The instance of the bean class [className], creating all beans first if needed. */
     override fun instanceOf(className: String) = instantiateAll().entries.firstOrNull { it.key.className == className }?.value
@@ -168,9 +173,13 @@ class PluginBeanSession(
         )
     }
 
-    /** Takes a new instance into the session: a [Reloadable] is loaded now and on every reload of the plugin. */
+    /**
+     * Takes a new instance into the session: a [Reloadable] is loaded on every reload of the plugin and
+     * once before, in the first pass after the beans exist and the plugin's values are set, or at once
+     * when it is obtained after that pass.
+     */
     private fun <T : Any> adopt(instance: T): T {
-        if (instance is Reloadable && reloadables.add(instance)) reload(instance)
+        if (instance is Reloadable && reloadables.add(instance) && loaded) reload(instance)
         return instance
     }
 

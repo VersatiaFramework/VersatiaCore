@@ -10,7 +10,7 @@ import com.github.marcoral.versatia.di.PluginBean
 import com.github.marcoral.versatia.engine.descriptor.AnnotationOccurrence
 import com.github.marcoral.versatia.engine.descriptor.ClassTarget
 import com.github.marcoral.versatia.engine.descriptor.EnhancedElement
-import com.github.marcoral.versatia.engine.descriptor.FunctionOwner
+import com.github.marcoral.versatia.engine.descriptor.MemberOwner
 import com.github.marcoral.versatia.engine.descriptor.FunctionTarget
 import com.github.marcoral.versatia.engine.descriptor.Instantiator
 import com.github.marcoral.versatia.engine.descriptor.Invoker
@@ -115,7 +115,7 @@ class RegisterListenersTest {
 
     @Test
     fun `rejects anything but classes`() {
-        val function = FunctionTarget(mainName, mainName, "start", FunctionOwner.PLUGIN, emptyList(), emptyList(), Invoker.Direct { _, _ -> })
+        val function = FunctionTarget(mainName, mainName, "start", MemberOwner.PLUGIN, emptyList(), emptyList(), Invoker.Direct { _, _ -> })
         val element = EnhancedElement(EventProcessors.REGISTER_LISTENERS, EventType.PLUGIN_START_ONLY, annotation, function, origin)
 
         val failure = assertFailsWith<EnhancementException> { enhancer.enhance(descriptor(element), context()) }

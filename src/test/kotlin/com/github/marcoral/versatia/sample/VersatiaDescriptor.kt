@@ -6,7 +6,7 @@ import com.github.marcoral.versatia.di.BeanProcessors
 import com.github.marcoral.versatia.di.PluginBean
 import com.github.marcoral.versatia.engine.descriptor.AnnotationOccurrence
 import com.github.marcoral.versatia.engine.descriptor.EnhancedElement
-import com.github.marcoral.versatia.engine.descriptor.FunctionOwner
+import com.github.marcoral.versatia.engine.descriptor.MemberOwner
 import com.github.marcoral.versatia.engine.descriptor.FunctionTarget
 import com.github.marcoral.versatia.engine.descriptor.Invoker
 import com.github.marcoral.versatia.engine.descriptor.PluginTarget
@@ -39,7 +39,7 @@ object VersatiaDescriptor : VersatiaPluginDescriptor {
         LifecycleProcessors.AUTO_INVOKE,
         phase,
         AnnotationOccurrence(AutoInvoke::class.java.name, mapOf("phase" to phase.name)),
-        FunctionTarget(Ticker::class.qualifiedName!!, Ticker::class.java.name, name, FunctionOwner.OBJECT, emptyList(), emptyList(), Invoker.Direct { _, _ -> call() }),
+        FunctionTarget(Ticker::class.qualifiedName!!, Ticker::class.java.name, name, MemberOwner.OBJECT, emptyList(), emptyList(), Invoker.Direct { _, _ -> call() }),
     )
 }
 

@@ -31,8 +31,8 @@ class ExposePrototypeEnhancementProcessor : BeanScopeEnhancementProcessor(BeanSc
 
 /**
  * At start, registers the plugin's main class, whose instance already exists, as the local bean
- * named `plugin`; at a reload, reloads the session's `Reloadable` beans before the auto-invoked
- * functions of the event run.
+ * named `plugin`; at a reload, reloads the session's `Reloadable` beans once every processor has
+ * run, so after the `@Value` properties are set, and before the auto-invoked functions.
  */
 class PluginBeanEnhancementProcessor : EnhancementProcessor {
     override fun process(elements: List<EnhancedElement>, context: EnhancementContext) {
@@ -40,7 +40,7 @@ class PluginBeanEnhancementProcessor : EnhancementProcessor {
             ?: throw EnhancementException("Plugin ${context.plugin.name} must declare its main class exactly once, got ${elements.map { it.target }}")
         val session = PluginBeanSession.of(context)
         when (context.event) {
-            LifecycleEvent.RELOAD -> session.reload()
+            LifecycleEvent.RELOAD -> context.onPluginEnhanced { session.reload() }
             else -> session.declare(context, listOf(BeanDefinition.plugin(target, context.plugin)))
         }
     }

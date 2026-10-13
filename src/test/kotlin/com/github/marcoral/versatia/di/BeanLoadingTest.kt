@@ -9,6 +9,10 @@ import com.github.marcoral.versatia.ProcessorLoader
 import com.github.marcoral.versatia.engine.descriptor.AnnotationOccurrence
 import com.github.marcoral.versatia.engine.descriptor.ClassTarget
 import com.github.marcoral.versatia.engine.descriptor.EnhancedElement
+import com.github.marcoral.versatia.engine.descriptor.FunctionTarget
+import com.github.marcoral.versatia.engine.descriptor.Invoker
+import com.github.marcoral.versatia.engine.descriptor.MemberOwner
+import com.github.marcoral.versatia.lifecycle.LifecycleProcessors
 import com.github.marcoral.versatia.engine.descriptor.Instantiator
 import com.github.marcoral.versatia.engine.descriptor.Parameter
 import com.github.marcoral.versatia.engine.descriptor.PluginTarget
@@ -112,6 +116,10 @@ class Bank(val plugin: Plugin) : Reloadable {
 
 class Teller(val bank: Bank, val prices: Prices) : Reloadable {
     override fun reload() = Recorder.record("Teller.reload", this)
+}
+
+object Counter {
+    fun count(bank: Bank) = Recorder.record("Counter.count", bank)
 }
 
 class Broken : Reloadable {
@@ -371,11 +379,11 @@ class BeanLoadingTest {
     fun `Reloadable beans load when created and again at every reload of their plugin, in creation order`() {
         val alpha = context("Alpha")
         enhancer.enhance(descriptor(mainClass, bank), alpha)
-        assertEquals(listOf("Bank.reload for Alpha"), Recorder.names(), "the owner's own instance loads at creation")
+        assertEquals(listOf("Bank.reload for Alpha"), Recorder.names(), "the owner's own instance loads once its beans exist")
 
         Recorder.reset()
         enhancer.enhance(descriptor(mainClass, teller, prices), context("Beta"))
-        assertEquals(listOf("Bank.reload for Beta", "Prices.reload", "Teller.reload"), Recorder.names(), "each bean loads right after its creation, dependencies first")
+        assertEquals(listOf("Bank.reload for Beta", "Prices.reload", "Teller.reload"), Recorder.names(), "beans load once they all exist, in creation order")
 
         Recorder.reset()
         enhancer.enhance(descriptor(mainClass, teller, prices), context("Beta", LifecycleEvent.RELOAD))
@@ -526,5 +534,25 @@ class BeanLoadingTest {
         }
         assertContains(error.message!!, "Plugin Alpha needs the enhancement processor com.example.MissingEnhancementProcessor")
         assertEquals(emptyList(), Recorder.names())
+    }
+
+    @Test
+    fun `a Reloadable obtained after the plugin started is loaded at once`() {
+        enhancer.enhance(descriptor(mainClass, bank), context("Alpha"))
+        enhancer.enhance(descriptor(mainClass), context("Beta"))
+        Recorder.reset()
+
+        val count = EnhancedElement(
+            LifecycleProcessors.AUTO_INVOKE,
+            EventType.PLUGIN_RELOAD_ONLY,
+            AnnotationOccurrence("test.Invoke"),
+            FunctionTarget(
+                Counter::class.qualifiedName!!, Counter::class.java.name, "count", MemberOwner.OBJECT, emptyList(),
+                listOf(Parameter(Bank::class.qualifiedName!!)), Invoker.Direct { _, args -> Counter.count(args[0] as Bank) },
+            ),
+        )
+        enhancer.enhance(descriptor(mainClass, count), context("Beta", LifecycleEvent.RELOAD))
+
+        assertEquals(listOf("Bank.reload for Beta", "Counter.count"), Recorder.names(), "the instance made for Beta loads before the function receives it")
     }
 }

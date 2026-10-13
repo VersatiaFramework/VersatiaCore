@@ -10,6 +10,7 @@ import com.github.marcoral.versatia.engine.descriptor.ElementTarget
 import com.github.marcoral.versatia.engine.descriptor.EnhancedElement
 import com.github.marcoral.versatia.engine.descriptor.FunctionTarget
 import com.github.marcoral.versatia.engine.descriptor.PluginTarget
+import com.github.marcoral.versatia.engine.descriptor.PropertyTarget
 import org.bukkit.event.Listener
 
 /**
@@ -29,7 +30,7 @@ class RegisterListenersEnhancementProcessor : EnhancementProcessor {
         val instance = when (target) {
             is PluginTarget -> context.plugin
             is ClassTarget -> beans?.instanceOf(target.className) ?: create(target, context, beans)
-            is FunctionTarget -> throw EnhancementException("${javaClass.name} can only enhance classes, got $target")
+            is FunctionTarget, is PropertyTarget -> throw EnhancementException("${javaClass.name} can only enhance classes, got $target")
         }
         return instance as? Listener ?: throw EnhancementException("Plugin ${context.plugin.name}: ${target.className} is not a Listener")
     }

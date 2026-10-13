@@ -6,8 +6,8 @@ import com.github.marcoral.versatia.EnhancementProcessor
 import com.github.marcoral.versatia.classLoader
 import com.github.marcoral.versatia.di.BeanResolver
 import com.github.marcoral.versatia.engine.descriptor.EnhancedElement
-import com.github.marcoral.versatia.engine.descriptor.FunctionOwner
 import com.github.marcoral.versatia.engine.descriptor.FunctionTarget
+import com.github.marcoral.versatia.engine.descriptor.receiverOf
 
 /**
  * Calls `@AutoInvoke` functions once every other processor has run for the event, in descriptor
@@ -23,13 +23,8 @@ class AutoInvokeEnhancementProcessor : EnhancementProcessor {
 
     private fun invoke(target: FunctionTarget, context: EnhancementContext) {
         val description = "${target.className}.${target.functionName}()"
+        val instance = context.receiverOf(target.owner, target.className, target.binaryClassName, "call $description on")
         val beans = context.state[BeanResolver.KEY]
-        val instance = when (target.owner) {
-            FunctionOwner.PLUGIN -> context.plugin
-            FunctionOwner.OBJECT -> objectInstance(target, context)
-            FunctionOwner.INSTANCE -> beans?.instanceOf(target.className)
-                ?: throw EnhancementException("Plugin ${context.plugin.name}: no bean ${target.className} exists to call $description on")
-        }
         val arguments = when {
             target.parameters.isEmpty() -> emptyList()
             beans == null -> throw EnhancementException("Plugin ${context.plugin.name}: $description needs injected parameters, but the plugin has no beans")
@@ -43,7 +38,4 @@ class AutoInvokeEnhancementProcessor : EnhancementProcessor {
             throw EnhancementException("Plugin ${context.plugin.name}: $description failed at ${context.event}", e)
         }
     }
-
-    private fun objectInstance(target: FunctionTarget, context: EnhancementContext) =
-        Class.forName(target.binaryClassName, true, context.classLoader).getDeclaredField("INSTANCE").get(null)
 }

@@ -144,11 +144,18 @@ processor calls `PluginBeanSession.reload()` instead, which is how reloadable be
 ### Reloadable beans
 
 The session *adopts* every instance it makes or obtains: its own beans and the prototype instances
-made for its plugin. An adopted instance implementing `Reloadable` is reloaded right away, so a
-bean that reads files in `reload()` is ready as soon as it exists, and remembered in creation
-order. `PluginBeanSession.reload()` runs them all again in that order; because the plugin-bean
-processor does this synchronously while `@AutoInvoke` runs in a completion action, reload-phase
-functions always see reloaded beans. A throwing `reload()` is wrapped as
+made for its plugin. An adopted instance implementing `Reloadable` is remembered in creation
+order and reloaded in the completion action of the start event, right after `instantiateAll`,
+so once every bean exists and after `ValueEnhancementProcessor` set the plugin's `@Value`
+properties in `process`; a `reload()` may therefore read them, which is the point of the order: a
+`reload()` may depend on a value, a value depends on nothing, so the smaller operation goes first.
+The price is that a dependent's constructor no longer sees a loaded `Reloadable`, which the
+constructors-only-wire rule already forbids relying on. At the reload event
+`PluginBeanEnhancementProcessor` registers `PluginBeanSession.reload()` as a completion action,
+again after the values; both actions precede the auto-invoke processor's, so reload-phase
+functions always see reloaded beans. The session remembers that the first pass ran (`loaded`),
+and an instance adopted afterwards, a prototype first obtained by a function at a reload say,
+is reloaded as soon as it is adopted. A throwing `reload()` is wrapped as
 `Plugin X: <class> failed to reload`. Exposed singletons are adopted by their owner only, so a
 consumer's reload never touches them.
 
@@ -214,9 +221,9 @@ after every other processor of the event has finished, in particular after the b
 plugin exist. Functions run in descriptor order (class name, then function name). For each function
 the processor:
 
-1. picks the receiver by `FunctionOwner`: the plugin instance from the context, the `INSTANCE` of a
-   Kotlin `object`, or (`FunctionOwner.INSTANCE`) the bean of that class from the plugin's bean
-   session;
+1. picks the receiver by `MemberOwner` (`engine.descriptor.receiverOf`, shared with the value
+   processor): the plugin instance from the context, the `INSTANCE` of a Kotlin `object`, or
+   (`MemberOwner.INSTANCE`) the bean of that class from the plugin's bean session;
 2. resolves the parameters through the bean session with the same rules as constructor
    dependencies (local beans first, then exposed beans; one prototype instance per plugin);
 3. calls the `Invoker`. Any exception is wrapped in an `EnhancementException` naming the function
@@ -224,6 +231,28 @@ the processor:
 
 Because the plugin's beans are kept for its whole lifetime (above), this works at every phase, not
 only at start.
+
+## Configuration values (`config`)
+
+`ValueEnhancementProcessor` handles the `PropertyTarget`s that `@Value` produced. It works in
+`process` itself, like resource extraction, so the values are in place before any completion
+action: before the bean session reloads its `Reloadable` beans and before the auto-invoke
+processor runs the functions. The generator lists property elements after the bean elements, so
+by then every scope has declared its beans and the resources are extracted; a property of a bean
+asks the `BeanResolver` for the instance, and `instanceOf` makes the session create all beans at
+that point (the later instantiation action finds them created). The processor loads every file
+the elements name once (`loadYamlOrThrow`, relative to the data folder; a missing file is an error
+that points at `resources/`), reads every value, and only then assigns them, so a broken file
+changes nothing. `ValueReader` turns the recorded `TypeReference` into a read: the scalar and
+Bukkit types map to the `OrThrow` getters of `util.config`, an enum is loaded through the plugin's
+class loader (trying the binary names a nested class may have) and matched by constant name
+ignoring case, `List` and `Set` use the list getters, `Map` reads a section child by child. With
+a mapper recorded in the annotation (any class but `NoMapper`), the reader creates it, the
+`object` instance or a new one from the no-argument constructor, and calls `map(section, key)`
+instead; a missing key is handled before, by the property's nullability. A `PreviousValueTracking<T>`
+is read as its `T`, the setter storing into the cell. Whatever the read
+throws becomes `Plugin X: <class>.<property> could not be read from <file>: <reason>`; the
+receiver is picked like for a function, and the `Setter` assigns, directly or through `util.reflect`.
 
 ## Plugin resources (`resources`)
 
@@ -254,11 +283,17 @@ kept in the plugin state.
   errors for a missing class, a class that is no processor and one without a usable constructor.
 - `BeanLoadingTest` drives `PluginEnhancer` with hand-written descriptors: creation order,
   isolation of local beans, singleton sharing, prototype semantics including the consumer's plugin
-  and prototype chains, `Reloadable` at creation and at reload, ambiguity, lifetime bound to the
+  and prototype chains, `Reloadable` after creation, at reload and on late adoption, ambiguity, lifetime bound to the
   plugin state, reflective instantiation of a private class, the plugin instance as a bean, phases,
   missing processors.
 - `AutoInvokeTest` covers the receivers (plugin, object, bean), parameter injection from local and
   exposed beans and of the plugin itself, reload and stop phases, reflection and error wrapping.
+- `ValueTest` covers the receivers for properties, values set before reloadable beans and
+  functions, reload and a broken file leaving values untouched, nullable and missing values, named
+  and missing files, enums, lists, sets and maps, mappers (objects, nested objects, classes, their
+  failures), tracked cells with their previous value, and reflective setters for private and
+  inline-class properties;
+  `ValueIntegrationTest` compiles a plugin with `@Value` properties and runs it at start and reload.
 - `DescriptorLoaderTest` and `DescriptorCompatibilityTest` cover lookup by main class and the
   format-version rule.
 - `DependencyInjectionIntegrationTest` is end to end: it compiles three sample plugins with the

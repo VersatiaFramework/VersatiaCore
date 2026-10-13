@@ -5,7 +5,7 @@ import com.github.marcoral.versatia.di.PluginBean
 import com.github.marcoral.versatia.engine.descriptor.AnnotationOccurrence
 import com.github.marcoral.versatia.engine.descriptor.ClassTarget
 import com.github.marcoral.versatia.engine.descriptor.EnhancedElement
-import com.github.marcoral.versatia.engine.descriptor.FunctionOwner
+import com.github.marcoral.versatia.engine.descriptor.MemberOwner
 import com.github.marcoral.versatia.engine.descriptor.FunctionTarget
 import com.github.marcoral.versatia.engine.descriptor.Instantiator
 import com.github.marcoral.versatia.engine.descriptor.Invoker
@@ -63,16 +63,16 @@ class PluginEnhancerTest {
         ClassTarget(bridgeName, listOf(bridgeName), listOf(conditional("Vault")), emptyList(), Instantiator.Direct { Bridge() }),
     )
 
-    private fun function(className: String, name: String, classAnnotations: List<AnnotationOccurrence>, owner: FunctionOwner, invoker: Invoker) = EnhancedElement(
+    private fun function(className: String, name: String, classAnnotations: List<AnnotationOccurrence>, owner: MemberOwner, invoker: Invoker) = EnhancedElement(
         LifecycleProcessors.AUTO_INVOKE,
         EventType.PLUGIN_START_ONLY,
         AnnotationOccurrence(AutoInvoke::class.java.name, mapOf("phase" to EventType.PLUGIN_START_ONLY.name)),
         FunctionTarget(className, className, name, owner, emptyList(), emptyList(), invoker, classAnnotations),
     )
 
-    private val connect = function(bridgeName, "connect", listOf(conditional("Vault")), FunctionOwner.INSTANCE, Invoker.Direct { instance, _ -> (instance as Bridge).connect() })
-    private val hook = function(Hooks::class.qualifiedName!!, "hook", listOf(conditional("CommandAPI", "Vault")), FunctionOwner.OBJECT, Invoker.Direct { _, _ -> Hooks.hook() })
-    private val always = function(Beacon::class.qualifiedName!!, "always", emptyList(), FunctionOwner.OBJECT, Invoker.Direct { _, _ -> Beacon.always() })
+    private val connect = function(bridgeName, "connect", listOf(conditional("Vault")), MemberOwner.INSTANCE, Invoker.Direct { instance, _ -> (instance as Bridge).connect() })
+    private val hook = function(Hooks::class.qualifiedName!!, "hook", listOf(conditional("CommandAPI", "Vault")), MemberOwner.OBJECT, Invoker.Direct { _, _ -> Hooks.hook() })
+    private val always = function(Beacon::class.qualifiedName!!, "always", emptyList(), MemberOwner.OBJECT, Invoker.Direct { _, _ -> Beacon.always() })
 
     private fun enhance(vararg enabledPlugins: String) {
         val context = testContext("Alpha", PluginStates(), plugin = fakePlugin("Alpha", enabledPlugins = enabledPlugins.toSet()))

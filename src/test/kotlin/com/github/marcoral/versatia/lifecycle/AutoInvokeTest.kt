@@ -11,7 +11,7 @@ import com.github.marcoral.versatia.di.PluginBean
 import com.github.marcoral.versatia.engine.descriptor.AnnotationOccurrence
 import com.github.marcoral.versatia.engine.descriptor.ClassTarget
 import com.github.marcoral.versatia.engine.descriptor.EnhancedElement
-import com.github.marcoral.versatia.engine.descriptor.FunctionOwner
+import com.github.marcoral.versatia.engine.descriptor.MemberOwner
 import com.github.marcoral.versatia.engine.descriptor.FunctionTarget
 import com.github.marcoral.versatia.engine.descriptor.Instantiator
 import com.github.marcoral.versatia.engine.descriptor.Invoker
@@ -76,7 +76,7 @@ class AutoInvokeTest {
 
     private inline fun <reified T : Any> function(
         name: String,
-        owner: FunctionOwner,
+        owner: MemberOwner,
         invoker: Invoker,
         phase: EventType = EventType.PLUGIN_START_ONLY,
         parameters: List<String> = emptyList(),
@@ -106,9 +106,9 @@ class AutoInvokeTest {
     fun `calls functions of the plugin, of objects and of beans after beans exist`() {
         val main = MainClass()
         val elements = descriptor(
-            function<MainClass>("start", FunctionOwner.PLUGIN, Invoker.Direct { instance, _ -> (instance as MainClass).start() }, EventType.PLUGIN_RELOAD_OR_START),
-            function<Greeter>("greet", FunctionOwner.INSTANCE, Invoker.Direct { instance, _ -> (instance as Greeter).greet() }),
-            function<Registry>("refresh", FunctionOwner.OBJECT, Invoker.Direct { _, _ -> Registry.refresh() }),
+            function<MainClass>("start", MemberOwner.PLUGIN, Invoker.Direct { instance, _ -> (instance as MainClass).start() }, EventType.PLUGIN_RELOAD_OR_START),
+            function<Greeter>("greet", MemberOwner.INSTANCE, Invoker.Direct { instance, _ -> (instance as Greeter).greet() }),
+            function<Registry>("refresh", MemberOwner.OBJECT, Invoker.Direct { _, _ -> Registry.refresh() }),
             greeterBean(),
         )
 
@@ -127,7 +127,7 @@ class AutoInvokeTest {
 
         val welcome = function<MainClass>(
             "welcome",
-            FunctionOwner.PLUGIN,
+            MemberOwner.PLUGIN,
             Invoker.Direct { instance, args -> (instance as MainClass).welcome(args[0] as Greeter) },
             parameters = listOf(greeterName),
         )
@@ -147,7 +147,7 @@ class AutoInvokeTest {
         val mainClass = pluginElement(mainName)
         val introduce = function<MainClass>(
             "introduce",
-            FunctionOwner.PLUGIN,
+            MemberOwner.PLUGIN,
             Invoker.Direct { instance, args -> (instance as MainClass).introduce(args[0] as MainClass) },
             parameters = listOf(mainName),
         )
@@ -163,12 +163,12 @@ class AutoInvokeTest {
         val main = MainClass()
         val welcome = function<MainClass>(
             "welcome",
-            FunctionOwner.PLUGIN,
+            MemberOwner.PLUGIN,
             Invoker.Direct { instance, args -> (instance as MainClass).welcome(args[0] as Greeter) },
             phase = EventType.PLUGIN_RELOAD_OR_START,
             parameters = listOf(greeterName),
         )
-        val greetOnStop = function<Greeter>("greet", FunctionOwner.INSTANCE, Invoker.Direct { instance, _ -> (instance as Greeter).greet() }, EventType.PLUGIN_STOP)
+        val greetOnStop = function<Greeter>("greet", MemberOwner.INSTANCE, Invoker.Direct { instance, _ -> (instance as Greeter).greet() }, EventType.PLUGIN_STOP)
         val elements = descriptor(welcome, greetOnStop, greeterBean())
 
         enhancer.enhance(elements, context("Alpha", plugin = main))
@@ -193,7 +193,7 @@ class AutoInvokeTest {
             LifecycleProcessors.AUTO_INVOKE,
             EventType.PLUGIN_START_ONLY,
             AnnotationOccurrence(AutoInvoke::class.java.name),
-            FunctionTarget(hiddenName, hiddenName, "reset", FunctionOwner.OBJECT, emptyList(), listOf(Parameter(greeterName)), Invoker.Reflective(hiddenName, "reset", listOf(greeterName))),
+            FunctionTarget(hiddenName, hiddenName, "reset", MemberOwner.OBJECT, emptyList(), listOf(Parameter(greeterName)), Invoker.Reflective(hiddenName, "reset", listOf(greeterName))),
         )
 
         enhancer.enhance(descriptor(hidden, greeterBean()), context("Alpha"))
@@ -206,8 +206,8 @@ class AutoInvokeTest {
     fun `respects the phase`() {
         val main = MainClass()
         val elements = descriptor(
-            function<MainClass>("start", FunctionOwner.PLUGIN, Invoker.Direct { instance, _ -> (instance as MainClass).start() }, EventType.PLUGIN_START_ONLY),
-            function<MainClass>("stop", FunctionOwner.PLUGIN, Invoker.Direct { instance, _ -> (instance as MainClass).stop() }, EventType.PLUGIN_STOP),
+            function<MainClass>("start", MemberOwner.PLUGIN, Invoker.Direct { instance, _ -> (instance as MainClass).start() }, EventType.PLUGIN_START_ONLY),
+            function<MainClass>("stop", MemberOwner.PLUGIN, Invoker.Direct { instance, _ -> (instance as MainClass).stop() }, EventType.PLUGIN_STOP),
         )
 
         enhancer.enhance(elements, context("Alpha", plugin = main))
@@ -219,7 +219,7 @@ class AutoInvokeTest {
 
     @Test
     fun `wraps failures with the function and the event`() {
-        val elements = descriptor(function<MainClass>("explode", FunctionOwner.PLUGIN, Invoker.Direct { instance, _ -> (instance as MainClass).explode() }))
+        val elements = descriptor(function<MainClass>("explode", MemberOwner.PLUGIN, Invoker.Direct { instance, _ -> (instance as MainClass).explode() }))
 
         val error = assertFailsWith<EnhancementException> {
             enhancer.enhance(elements, context("Alpha", plugin = MainClass()))
@@ -230,12 +230,12 @@ class AutoInvokeTest {
 
     @Test
     fun `reports missing beans for the instance and for parameters`() {
-        val onBean = descriptor(function<Greeter>("greet", FunctionOwner.INSTANCE, Invoker.Direct { instance, _ -> (instance as Greeter).greet() }))
+        val onBean = descriptor(function<Greeter>("greet", MemberOwner.INSTANCE, Invoker.Direct { instance, _ -> (instance as Greeter).greet() }))
         val forInstance = assertFailsWith<EnhancementException> { enhancer.enhance(onBean, context("Alpha")) }
         assertContains(forInstance.message!!, "no bean $greeterName exists")
 
         val withParameter = descriptor(
-            function<MainClass>("welcome", FunctionOwner.PLUGIN, Invoker.Direct { instance, args -> (instance as MainClass).welcome(args[0] as Greeter) }, parameters = listOf(greeterName)),
+            function<MainClass>("welcome", MemberOwner.PLUGIN, Invoker.Direct { instance, args -> (instance as MainClass).welcome(args[0] as Greeter) }, parameters = listOf(greeterName)),
         )
         val noBeans = assertFailsWith<EnhancementException> { enhancer.enhance(withParameter, context("Beta", plugin = MainClass())) }
         assertContains(noBeans.message!!, "${MainClass::class.qualifiedName}.welcome() needs injected parameters, but the plugin has no beans")
