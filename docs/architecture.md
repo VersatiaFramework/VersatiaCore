@@ -24,13 +24,13 @@ classpath or searches for annotated classes with reflection while the server is 
 
 1. **Compile time (VersatiaAPI).** A code generation step runs as part of the plugin's build
    and emits a descriptor, a file with "hints" bundled into the plugin JAR, describing everything
-   the framework has to act on: listeners to register, tasks to start, components to construct and
+   the framework has to act on: listeners to register, functions to call, components to construct and
    inject, resources to unpack, and so on.
 2. **Runtime (VersatiaCore).** At a few well-defined lifecycle points the runtime reads the
    descriptor of each Versatia plugin and executes it:
-   - plugin load and enable,
-   - reload,
-   - plugin disable and server shutdown.
+   - `START`, when the plugin is enabled,
+   - `RELOAD`, when it is reloaded,
+   - `STOP`, when it is disabled, server shutdown included.
 
    Between those points the descriptor is not needed.
 
@@ -39,7 +39,8 @@ defines what is generated, VersatiaCore must be able to read it.
 
 ## Responsibilities of the runtime
 
-- Register listeners and start scheduled tasks listed in the descriptor, and undo both on disable.
+- Register the listeners and call the functions listed in the descriptor at each event; Bukkit
+  unregisters the listeners on disable.
 - Construct components and resolve their dependencies from the descriptor, without runtime
   discovery.
 - Unpack resources and perform other repetitive `onEnable` setup on behalf of plugins.
@@ -58,7 +59,7 @@ The annotation itself points at its processor and says when it is processed:
 @Target(AnnotationTarget.CLASS)
 @Retention(AnnotationRetention.BINARY)
 @Bean
-@VersatiaEnhancement(BeanProcessors.LOCAL, enhancementPhase = EventType.PLUGIN_START_ONLY)
+@VersatiaEnhancement(BeanProcessors.LOCAL, enhancementPhase = Phase.PLUGIN_START_ONLY)
 annotation class LocalBean
 ```
 

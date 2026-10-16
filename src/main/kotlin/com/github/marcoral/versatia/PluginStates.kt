@@ -19,10 +19,19 @@ class PluginStates : AutoCloseable {
         stores.remove(pluginName)?.close()
     }
 
-    /** Drops every plugin's state and then the runtime's. */
+    /**
+     * Drops every plugin's state, last created first, and then the runtime's; every store is closed
+     * even when another fails, and the first failure is thrown with the rest suppressed.
+     */
     override fun close() {
-        stores.keys.toList().forEach(::drop)
-        runtime.close()
+        val closes = stores.keys.toList().asReversed().map { name -> { drop(name) } } + runtime::close
+        var failure: Exception? = null
+        for (close in closes) try {
+            close()
+        } catch (e: Exception) {
+            failure?.addSuppressed(e) ?: run { failure = e }
+        }
+        failure?.let { throw it }
     }
 }
 

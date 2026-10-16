@@ -57,6 +57,6 @@ class DescriptorLoaderTest {
         val error = assertFailsWith<EnhancementException> {
             DescriptorLoader.load("com.github.marcoral.versatia.engine.descriptor.notobject.Plugin", context)
         }
-        assertEquals("com.github.marcoral.versatia.engine.descriptor.notobject.VersatiaDescriptor is not a Kotlin object; it is not a Versatia descriptor", error.message)
+        assertEquals("Plugin Sample: com.github.marcoral.versatia.engine.descriptor.notobject.VersatiaDescriptor is not a Kotlin object; it is not a Versatia descriptor", error.message)
     }
 }

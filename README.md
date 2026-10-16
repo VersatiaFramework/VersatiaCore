@@ -18,14 +18,25 @@ Access to the sources is granted individually by the Versatia team; everybody el
 as a plugin JAR, which is all a server or a plugin author needs. Nothing a plugin compiles against
 lives here, so the public VersatiaAPI and the documentation describe the runtime's behaviour in full.
 
-The current version (`0.0.1`) provides dependency injection and lifecycle hooks: `@LocalBean`,
-`@ExposeSingleton` and `@ExposePrototype` beans are created in dependency order when a plugin
-enables and shared across plugins according to their scope; `@AutoInvoke` functions run at the
-declared phase with their parameters injected from those beans; the files a plugin ships under
-`resources/` are extracted into its data folder when it starts, and its Bukkit listeners are
-registered. With the [CommandAPI](https://commandapi.dev/) plugin installed, `/versatia reload`
-runs the reload phase of every Versatia plugin, or of one addressed by its `@FriendlyName`;
-elements marked `@ConditionalOnPlugin` are skipped for the plugin's lifetime when the plugins they need were absent at its start.
+The current version (`0.0.1`) provides:
+
+- dependency injection: `@LocalBean`, `@ExposeSingleton` and `@ExposePrototype` beans are created
+  in dependency order when a plugin enables and shared across plugins according to their scope,
+  with `@Qualifier`, `@Primary` and optional constructor parameters; `Reloadable` beans reload with
+  their plugin and `AutoCloseable` ones close with it; a `PluginRegistry` bean lists the running
+  Versatia plugins by their `@FriendlyName`;
+- lifecycle hooks: `@AutoInvoke` functions run at the declared phase with their parameters
+  injected from those beans;
+- configuration values: `@Value` properties are read from the plugin's YAML files at start and
+  at every reload, before the beans reload and the functions run, all or nothing;
+- per-plugin features of every `VersatiaPlugin`, each switchable with `@DisableVersatiaFeatures`:
+  the files it ships under `resources/` are extracted into its data folder, and its Bukkit
+  listeners are registered;
+- reload: `VersatiaEngine.reload` and, with the [CommandAPI](https://commandapi.dev/) plugin
+  installed, `/versatia reload [plugin]` run the reload phase of every Versatia plugin or of one,
+  then of the plugins holding its beans with `@Value` properties;
+- `@ConditionalOnPlugin`: elements are skipped for the plugin's lifetime when the plugins they need
+  were not enabled at its start.
 
 ## Requirements
 
@@ -64,14 +75,19 @@ still works and the copy step is skipped. The path can also be passed for a sing
 - `src/main/kotlin/com/github/marcoral/versatia/` – the runtime itself: `VersatiaCore` (main
   plugin class, registers the engine service), `VersatiaRuntime`, `PluginEnhancer`,
   `ProcessorLoader`, the plugin state, the registry of enhanced plugins (`EnhancedPlugins`, exposed
-  as a bean by `PluginRegistryBean`); the packages mirror VersatiaAPI's
+  as a bean by `PluginRegistryBean`), `ReloadOutcome` (what a reload reports); the packages
+  mirror VersatiaAPI's
 - `src/main/kotlin/.../engine/descriptor/` – descriptor loading and the format-version check
-- `src/main/kotlin/.../di/` – the bean scope processors and the per-plugin bean sessions
+- `src/main/kotlin/.../di/` – the bean scope processors, the per-plugin bean sessions and the
+  registry of beans exposed between plugins
+- `src/main/kotlin/.../config/` – the `@Value` processor and `ValueReader`
 - `src/main/kotlin/.../lifecycle/` – the `@AutoInvoke` processor
 - `src/main/kotlin/.../resources/` – the `@ExtractResources` processor
 - `src/main/kotlin/.../event/` – the `@RegisterListeners` processor
 - `src/main/kotlin/.../engine/command/` – `/versatia`, written with the CommandAPI Kotlin DSL
-- `src/test/kotlin/` – unit tests and the end-to-end dependency injection test
+- `src/test/kotlin/` – unit tests per processor and for the runtime, and end-to-end tests that
+  compile sample plugins with the real KSP processor (dependency injection, constructor
+  parameters, values across plugins); see the Tests section of [docs/runtime.md](docs/runtime.md)
 - `src/main/resources/plugin.yml` – plugin metadata (version and Kotlin version are filled in by Gradle)
 - `local.properties.example` – template for local settings
 - `docs/architecture.md` – how VersatiaAPI and VersatiaCore cooperate

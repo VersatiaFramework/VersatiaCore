@@ -1,7 +1,7 @@
 package com.github.marcoral.versatia.resources
 
 import com.github.marcoral.versatia.EnhancementException
-import com.github.marcoral.versatia.EventType
+import com.github.marcoral.versatia.Phase
 import com.github.marcoral.versatia.PluginEnhancer
 import com.github.marcoral.versatia.PluginStates
 import com.github.marcoral.versatia.ProcessorLoader
@@ -43,7 +43,7 @@ class ExtractResourcesTest {
 
     private val element = EnhancedElement(
         ResourceProcessors.EXTRACT,
-        EventType.PLUGIN_START_ONLY,
+        Phase.PLUGIN_START_ONLY,
         AnnotationOccurrence(ExtractResources::class.java.name),
         PluginTarget(mainName, listOf(mainName), emptyList()),
     )
@@ -123,7 +123,7 @@ class ExtractResourcesTest {
     fun `accepts only the plugin's main class`() {
         val bean = EnhancedElement(
             ResourceProcessors.EXTRACT,
-            EventType.PLUGIN_START_ONLY,
+            Phase.PLUGIN_START_ONLY,
             AnnotationOccurrence(ExtractResources::class.java.name),
             ClassTarget("com.example.Config", listOf("com.example.Config"), emptyList(), emptyList(), Instantiator.Direct { Any() }),
         )

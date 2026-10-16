@@ -26,11 +26,16 @@ lives in its processors; the classes of the root package know none of them.
 4. `DescriptorLoader` derives the descriptor class name from `main:` in `plugin.yml`
    (`<package of main class>.VersatiaDescriptor`), loads it through the plugin's class loader,
    reads the Kotlin `object` instance and checks its format version (below). Nothing is scanned.
+   The class must be defined by the plugin's own class loader: a descriptor reached through a
+   plugin it depends on is refused, and so is one that fails to link (`Plugin X: descriptor ...
+   cannot be loaded (...); rebuild the plugin against this VersatiaAPI`).
 5. `PluginEnhancer` keeps the elements whose phase applies to the current event and whose
    `@ConditionalOnPlugin` plugins were enabled when the plugin started (below), groups them by
    `processorClass`, has `ProcessorLoader` load every one of those classes before any processor
    runs (so a missing processor leaves the plugin untouched), hands each group to its processor,
-   and finally runs the actions processors registered with `context.onPluginEnhanced { }`. At
+   in the order of the group's first element in the descriptor, and finally runs the actions
+   processors registered with `context.onPluginEnhanced { }`, in registration order; an action
+   registered by another action runs after the ones already queued, before the event ends. At
    `STOP` this is best-effort: every processor, completion action and stop function runs even when
    another fails, and the first failure is thrown at the end with the others suppressed.
 6. After the start event, `VersatiaRuntime` registers the plugin in `EnhancedPlugins`, its
@@ -44,6 +49,24 @@ lives in its processors; the classes of the root package know none of them.
    plugin's own start `Plugin X is still starting; it can be reloaded once its start has
    completed`, and from inside its own reload `Plugin X is already reloading; a reload cannot start
    another one`. Enhancing a plugin that is running or starting throws `Plugin X is already running`.
+   A successful reload cascades: `reload(requested)` then reloads every running plugin that holds a
+   bean the reloaded one exposes (a prototype instance made for it or an injected singleton) of a
+   class marked to follow its owner's reloads, as `ExposedBeanRegistry.consumersReloadedWith`
+   records; the `@Value` processor marks every bean class with `@Value` properties, the session
+   records which of the owner's beans each bean's constructor takes (`recordDependencies`), and a
+   bean follows when its class is marked or it takes, transitively, an owner's bean that follows
+   (a singleton wrapping a `PriceList` with values cascades). A plugin holding only beans without
+   values, directly or through what they take, such as VersatiaCore's `PluginRegistry`, is not reloaded. It goes on transitively, each once per reload and always the
+   next one in start order, so owners go before their consumers and a cycle ends at a plugin
+   already reloaded. A plugin whose reload failed passes nothing on; a consumer's failure is an
+   outcome (`ReloadOutcome`), never undoes the reload before it, and reads `<name> failed to reload
+   after <owner>, whose beans it uses: <reason>. <owner> stays reloaded; fix <name> and reload it`.
+   `VersatiaEngine.reload(plugin)`, behind `plugin.versatiaReload()` and `VersatiaEngine.reload(name)`,
+   throws the requested plugin's failure and logs on that plugin's logger each consumer's failure
+   and the summary `Reloaded <consumers>, which use beans of <owners>.` A reload asked for while
+   one runs, from a reload function say, joins it; a plugin it already went through is refused
+   with `Plugin X has already been reloaded by the reload under way; a plugin reloads at most once
+   per reload`.
 7. When a plugin is disabled, the runtime runs its `PLUGIN_STOP` elements, drops the plugin's
    state, closing every entry that implements `AutoCloseable`, last created first, and forgets the
    registration.
@@ -64,9 +87,12 @@ the same way.
 class loader. Bukkit's plugin loaders delegate to the loaders of the plugins listed under
 `depend:`, so a processor may live in VersatiaCore (bundled with the API classes) or in any plugin
 the enhanced one depends on; a plugin can ship its own annotations and processors without touching
-VersatiaCore. One instance per class is created, with the no-argument constructor or by taking the
-instance of a Kotlin `object`, and kept for the lifetime of the runtime. A class that cannot be
-found, is not an `EnhancementProcessor` or cannot be created is reported with the plugin's name:
+VersatiaCore. The class is loaded without being initialised and checked to implement
+`EnhancementProcessor` before anything of it runs. One instance per class is created, with the
+no-argument constructor or by taking the instance of a Kotlin `object`, and kept in a `ClassValue`,
+so it lives as long as its class: a processor of a plugin that is gone does not keep that plugin's
+class loader alive. A class that cannot be found or linked, is not an `EnhancementProcessor` or
+cannot be created is reported with the plugin's name:
 
 ```
 Plugin MyPlugin needs the enhancement processor com.example.MyProcessor, which is not available. Is the plugin providing it installed and listed under depend:?
@@ -95,13 +121,13 @@ disabled; others are unaffected.
 
 ## Lifecycle events and phases
 
-Every element carries the phase its enhancement declared (`EventType`). The runtime walks a
+Every element carries the phase its enhancement declared (`Phase`). The runtime walks a
 plugin's descriptor at `LifecycleEvent`s and dispatches only the elements whose phase applies:
 
 | Event    | Triggered by                                           | Phases dispatched                              |
 |----------|--------------------------------------------------------|------------------------------------------------|
 | `START`  | `VersatiaPlugin.onEnable`, `VersatiaEngine.enhance`    | `PLUGIN_START_ONLY`, `PLUGIN_RELOAD_OR_START`  |
-| `RELOAD` | `/versatia reload`, `VersatiaEngine.reload` (behind `plugin.versatiaReload()` and the static `VersatiaEngine.reload(name)`) | `PLUGIN_RELOAD_ONLY`, `PLUGIN_RELOAD_OR_START` |
+| `RELOAD` | `/versatia reload`, `VersatiaEngine.reload` (behind `plugin.versatiaReload()` and the static `VersatiaEngine.reload(name)`), and the cascade to the plugins holding beans with `@Value` properties of a reloaded one | `PLUGIN_RELOAD_ONLY`, `PLUGIN_RELOAD_OR_START` |
 | `STOP`   | `VersatiaPlugin.onDisable`, `VersatiaEngine.disable`   | `PLUGIN_STOP`                                  |
 
 `EnhancementContext.event` tells a processor which event it is serving. The bean scopes run at
@@ -115,12 +141,15 @@ enabled (`PluginManager.isPluginEnabled`). The decision is taken once, when the 
 kept in the plugin's state, so an element skipped then stays skipped at every reload and at stop,
 like the beans it would have made, even when the required plugin is enabled later. A skipped bean
 does not exist for resolution: a `@Primary` on it counts only while its condition holds, and
-another provider of the type is injected instead. For a `FunctionTarget` the `classAnnotations` recorded
+another provider of the type is injected instead. For a `FunctionTarget` or a `PropertyTarget` the `classAnnotations` recorded
 from its declaring class count too, so a conditional bean or `object` takes its `@AutoInvoke`
 functions with it. A condition written through an annotation class meta-annotated with
 `@ConditionalOnPlugin` arrives the same way: the compile-time step records the inherited
-occurrence next to it. The skipped classes and the plugins they wait for are logged at `INFO` when the plugin starts
-(`Skipped VersatiaCommand: CommandAPI is not installed`), so an administrator sees why a command is missing. The filter reads the recorded attribute and knows
+occurrence next to it. The skipped classes are logged at `INFO` when the plugin starts, one line
+per missing plugin, so an administrator sees why a command is missing: `Skipped VersatiaCommand:
+CommandAPI is not installed`, or, for a plugin that is installed but was not enabled yet,
+`Skipped VaultBridge: Vault is installed but was not enabled before MyPlugin; list it under
+softdepend: in plugin.yml`. The filter reads the recorded attribute and knows
 no feature; the class behind a skipped element is never loaded, which is what lets it reference
 an optional plugin's classes.
 
@@ -130,10 +159,12 @@ VersatiaCore's commands are objects in `engine.command`, written with the Comman
 carrying `@ConditionalOnPlugin("CommandAPI")`, with `register` at `@AutoInvoke(PLUGIN_START_ONLY)`
 and `unregister` at `PLUGIN_STOP`; the CommandAPI plugin is a `softdepend:` and only its DSL
 ships in the JAR (see build.md). `VersatiaCommand` provides `/versatia reload [plugin]` behind the
-permission `versatia.core.command.reload`: it reads the runtime's registry, runs
-`reload` for every selected plugin, reports each failure to the sender and the console and
-continues, whatever the plugin threw short of a VM error. The sender sees
-`<name> failed to reload: <reason>`, where the reason joins the messages of the exception and its
+permission `versatia.core.command.reload`: it reads the runtime's registry, runs one cascading
+`reload` over the selected plugins (so a full reload still reloads each plugin once), reports each
+failure to the sender and the console and continues, whatever the plugin threw short of a VM
+error. The reply ends with `Reloaded <names>; then <consumers>, which use beans of <owners>.`,
+which is logged too when the reload cascaded. The sender sees
+`<name> failed to reload: <reason>` (or the cascade wording above), where the reason joins the messages of the exception and its
 causes, without the repeated `Plugin X:` prefix and without a message the previous one already
 contains. A configuration mistake (a wrong value, broken YAML or a missing file) is logged as one
 `WARNING` with that text and no stack trace, anything else at `SEVERE` with the trace. If
@@ -141,7 +172,8 @@ CommandAPI fails to register or unregister the command, typically because the in
 not compatible with the 12.x one VersatiaCore is built against, VersatiaCore logs one warning,
 `/versatia could not be registered. The installed CommandAPI <version> may not be compatible ...`,
 and keeps running without the command; an unknown name answers with the registered ones, which tab completion offers too.
-VersatiaCore itself is in the registry, so a full reload includes it (it has no reload elements).
+VersatiaCore itself is in the registry, so a full reload includes it; its only reload element is
+its plugin bean, whose session has nothing reloadable, so this changes nothing.
 
 ## Bean processors (`di`)
 
@@ -197,6 +229,14 @@ For every `Dependency` (a type `T` and an optional qualifier) of a bean or an `@
 3. One candidate is injected. Among several, the single `@Primary` one is; otherwise the error lists
    the candidates by name, class and owning plugin, with the hint to add `@Qualifier` or `@Primary`.
 
+An exposed instance is checked against the type as the consumer's class loader sees it before it is
+injected: two plugins that load separate copies of a class (one bundling the API classes, or a
+provider reloaded on its own by a plugin manager) cannot share instances, and the consumer reads
+`Plugin X: "name" (class from Owner) cannot be injected as T: the two plugins load separate copies
+of that class. ...` instead of a failed cast. A bean constructor that throws is reported as
+`Plugin X: bean "name" (class) could not be created: <reason>`, with ` for Y` when the instance was
+being made for consumer `Y` of a prototype of `X`.
+
 An optional constructor parameter (one with a default value) with zero candidates resolves to
 `DefaultArgument`, which `Instantiator.WithDefaults` leaves out of its `callBy`, so the default
 applies; a prototype made for a consumer reuses the owner's default. A parameter with `suppliedBy`
@@ -205,7 +245,12 @@ constructor) before the beans were created. A missing argument fails the creatio
 `Plugin X: <class> expects <processor> to supply parameter <n>, which it has not`, a `supply` after
 creation fails with `Plugin X: the argument of parameter <n> of <class> was supplied after the
 beans had been created`, and `resolve` refuses a supplied parameter, which only bean constructors
-can take. Supplied arguments of a prototype are the owner's for every consumer.
+can take. `supply` takes a function, called for every instance the constructor makes, the
+owner's and each prototype instance made for a consumer, so each gets the argument current at its
+creation. `onInstanceCreated(class, action)` runs an action on every instance of a bean class
+right after its constructor (at once on those that exist; false when the class is no bean of the
+plugin), and `instancesOf(class)` lists the live instances without creating any: the plugin's own
+and those its prototype made for plugins still running.
 
 The qualifier filters before the local-first preference, so a named request may reach an exposed
 bean past a local bean of the same type. The compile-time step applies the same rules to the local
@@ -234,6 +279,7 @@ prototype once; the factory then builds an instance for a consumer from:
 |---------------------------------------|---------------------------------------------------------------------|
 | its plugin bean                       | the consuming plugin, checked with `isInstance` against the parameter type (the compile-time step only sees `VersatiaPlugin`s) |
 | a prototype, its own or an exposed one | the instance of that prototype made for the consumer, resolved by the consumer's session with its own rules, so the consumer's beans share it |
+| a supplied parameter                  | what the supplying processor's function returns now                 |
 | anything else                         | the owner's argument                                                |
 
 The factory receives the consumer's resolution as a function, so a prototype built from other
@@ -243,7 +289,8 @@ prototypes (a `Messages` taking a `Text`, say) forms a chain made entirely for t
 
 A plugin's bean session, and the beans it exposed, live exactly as long as the plugin: the session
 is created when the plugin starts and closed when its state is dropped after its `PLUGIN_STOP`
-elements ran, which withdraws its entries from `ExposedBeanRegistry` and closes every
+elements ran, which withdraws its entries from `ExposedBeanRegistry`, makes the exposed beans it
+obtained forget it (so the owner neither lists its prototype instances nor reloads it any more), and closes every
 `AutoCloseable` instance the session adopted: its own beans and the prototype instances made for
 it, never a singleton exposed by another plugin. They close in reverse adoption order, and since a
 bean is adopted after its dependencies, dependents close first; every instance is closed even when
@@ -253,7 +300,8 @@ closing fails. Nothing is tied to server
 load, so a plugin enabled later (for example through a plugin manager) sees the exposed beans of
 the plugins running at that moment, and re-enabling a plugin replaces its beans. Beans are never
 re-created on reload; `Reloadable` ones are reloaded and reload-phase functions receive the
-retained instances.
+retained instances. When VersatiaCore is disabled, `PluginStates.close` drops the plugins' stores,
+last started first, and then the runtime's, closing every one even when another fails.
 
 ## Auto-invoked functions (`lifecycle`)
 
@@ -282,26 +330,43 @@ only at start.
 `process` itself, like resource extraction, so the values are in place before any completion
 action: before the bean session reloads its `Reloadable` beans and before the auto-invoke
 processor runs the functions. The generator lists property elements after the bean elements, so
-by then every scope has declared its beans and the resources are extracted; a property of a bean
-asks the `BeanResolver` for the instance, and `instanceOf` makes the session create all beans at
-that point (the later instantiation action finds them created). The processor loads every file
-the elements name once (`loadYamlOrThrow`, relative to the data folder), reads every value, and only then assigns them, so a broken file
-changes nothing. `ValueReader` turns the recorded `TypeReference` into a read: the scalar and
+by then every scope has declared its beans and the resources are extracted. The properties of the
+main class and of objects are set at once. Those of beans are not set on one instance but on every
+instance of the class, the plugin's own and each one its `@ExposePrototype` made for another
+plugin, whose values come from the owner's files: at start the processor keeps the values read
+in the plugin state and hands them to the bean session, a constructor property through `supply`
+(a function returning the kept value, wrapped in a new filled `PreviousValueTracking` for a
+tracked one, so no two instances share a cell) and the body properties through
+`onInstanceCreated` (set right after the constructor, before the instance is injected anywhere).
+No bean is created in `process` itself; the session creates them in its completion action, and
+each instance, the owner's or one made for a consumer that starts much later, starts with the
+values kept at that moment. A bean constructor thus sees the values of the main class, of
+objects, its own constructor values and those of the beans it takes, and the placeholders of its
+own body. At a reload the kept values are replaced and set on every instance `instancesOf` lists,
+then the runtime's cascade reloads the consumers holding them (the processor marks these
+classes with `ExposedBeanRegistry.followOwnerReloads` at start), which run their `PLUGIN_RELOAD_OR_START`
+functions with the new values. The processor loads every file
+the elements name once (`loadYamlOrThrow`, relative to the data folder; a path that leaves the
+data folder once normalized is refused with `Plugin X: the @Value file "<file>" lies outside the
+data folder; ...`, which the compile-time step already rules out for paths written in the source),
+reads every value, resolves every receiver and every bean instance, and only then assigns them, so
+a broken file or a missing receiver changes nothing. `ValueReader` turns the recorded `TypeReference` into a read: the scalar and
 Bukkit types map to the `OrThrow` getters of `util.config`, an enum is loaded through the plugin's
 class loader (trying the binary names a nested class may have) and matched by constant name
 ignoring case, `List` and `Set` use the strict list getters (`getStringListOrThrow` and the like,
 so a scalar where a list belongs or an element of the wrong type is an error), `Map` reads a
 section child by child. With
-a mapper recorded in the annotation (any class but `NoMapper`), the reader creates it, the
-`object` instance or a new one from the no-argument constructor, and calls `map(section, key)`
+a mapper recorded in the annotation (any class but `NoMapper`), the reader checks that the class
+implements `ValueMapper`, creates it once per event, the `object` instance or a new one from the
+no-argument constructor, and calls `map(section, key)`
 instead; a missing key is handled before, by the property's nullability. A `PreviousValueTracking<T>`
-is read as its `T`, the setter storing into the cell. At start, a value whose `PropertyTarget`
-records a `constructorParameter` is not set: it goes to `BeanResolver.supply` for that constructor
-parameter, wrapped in a new, filled `PreviousValueTracking` for a tracked one, after every value
-has been read and before any bean exists; at a reload it is set like any other, which fills the
-cell the constructor received. Whatever the read
-throws becomes `Plugin X: <class>.<property> could not be read from <file>: <reason>`; the
-receiver is picked like for a function, and the `Setter` assigns, directly or through `util.reflect`.
+is read as its `T`, the setter storing into the cell; at a reload a constructor property is set
+like a body one, which fills the cell each instance's constructor received. Whatever the read
+throws, a mapper that cannot be loaded or created included, becomes `Plugin X:
+<class>.<property> could not be read from <file>: <reason>` (the exception's class when it has no
+message), and a failing setter `Plugin X: <class>.<property> could not be set: <reason>`; the
+receiver is picked like for a function (a bean with no instance is `Plugin X: no bean <class> exists
+to set <class>.<property> on`), and the `Setter` assigns, directly or through `util.reflect`.
 A missing file is worded for whoever can fix it. When the plugin JAR carries a default copy under
 `resources/`, the admin reads `Plugin X: <file> is missing from the data folder; put it back, or
 reload the plugin to restore the default copy from the plugin JAR` (extraction runs at start and at
@@ -319,7 +384,9 @@ on `VersatiaPlugin`. It locates the plugin's code through the main class
 on a server and a class directory in tests, and copies every file under its `resources/` entry
 into `plugin.dataFolder`, keeping the paths below that entry. A destination that already exists
 is skipped, a symbolic link too, dangling or not, so a file the admin links to a shared copy is
-left alone; the file is created with `CREATE_NEW`, never written through an existing entry. A path
+left alone. The content is written to a temporary file next to the destination and then moved
+into place without replacing anything, so a failed copy never leaves half a file and an entry
+created meanwhile is kept. A path
 that would escape the data folder, checked lexically on the normalized path, is refused. The work is done in `process`
 itself, not in a completion action, so the files exist before the bean session creates anything.
 When the JAR has no `resources/` entry the data folder is not even touched.
@@ -340,35 +407,52 @@ kept in the plugin state.
 
 - `ProcessorLoaderTest` covers loading by name: one instance per class, Kotlin objects, and the
   errors for a missing class, a class that is no processor and one without a usable constructor.
+- `PluginEnhancerTest` covers `@ConditionalOnPlugin` on a bean, on its function and on an
+  object's function, the start decision kept at reload, a conditional `@Primary` falling back to
+  the other provider, the skip log per missing plugin (not installed or not enabled yet), the
+  processor order and completion actions added by completion actions, best-effort stop functions
+  and a start or reload cut short by a disable.
+- `VersatiaRuntimeTest` drives the runtime over a hand-written descriptor in the `sample` test
+  package: the registry and its start order, `@FriendlyName`, the duplicate-name error, the reload
+  event and the stop event, a failed or self-cancelled start followed by a disable, a
+  self-cancelled reload, the reload guards, the cascade through a cycle, a consumer of a bean that
+  does not follow reloads left alone, and a consumer failing after its owner reloaded.
+  `PluginStatesTest` covers the best-effort close of every store.
 - `BeanLoadingTest` drives `PluginEnhancer` with hand-written descriptors: creation order,
   isolation of local beans, singleton sharing, prototype semantics including the consumer's plugin
   and prototype chains, `Reloadable` after creation, at reload and on late adoption, ambiguity, lifetime bound to the
   plugin state with `AutoCloseable` beans closed dependents first, reflective instantiation of a private class, the plugin instance as a bean, phases,
-  missing processors.
+  missing processors, and a throwing constructor named with its plugin, bean and consumer.
 - `AutoInvokeTest` covers the receivers (plugin, object, bean), parameter injection from local and
   exposed beans and of the plugin itself, reload and stop phases, reflection and error wrapping.
-- `ValueTest` covers the receivers for properties, values set before reloadable beans and
-  functions, reload and a broken file leaving values untouched, nullable and missing values, named
+- `ValueTest` covers the receivers for properties, values of the plugin and objects set before the
+  beans exist, values set before reloadable beans and functions, reload and a broken file leaving values untouched, nullable and missing values, named
   and missing files, enums, lists, sets and maps, mappers (objects, nested objects, classes, their
   failures), tracked cells with their previous value, and reflective setters for private and
-  inline-class properties;
-  `ValueIntegrationTest` compiles a plugin with `@Value` properties and runs it at start and reload.
+  inline-class properties, a file outside the data folder and an unusable mapper;
+  `ValueReaderTest` checks that the reader's type maps equal `ValueTypes` and reads every scalar
+  type alone and in a list, a nested enum and malformed values; `ValueIntegrationTest` compiles a plugin with `@Value` properties and runs it at start and reload.
 - `BeanLoadingTest` also covers optional constructor parameters (local, exposed and default) and
   supplied ones with their two errors; `ConstructorParameterIntegrationTest` compiles plugins with a
-  `@Value` constructor `var` and tracking parameter (start, reload, failed reload), an optional
+  `@Value` constructor `var` and tracking parameter (start, reload, failed reload), a constructor
+  reading an object's value at start, an optional
   parameter, and a provider conditional through a meta-annotation that falls back while its plugin
-  is missing.
+  is missing. `BeanLoadingTest` also covers creation actions and the instances a prototype made
+  for other plugins, forgotten with their consumer. `CrossPluginValueIntegrationTest` compiles a
+  provider exposing a prototype with `@Value` properties and two consumers: their instances follow
+  the provider's reloads, a consumer started after a reload gets the current constructor values,
+  every instance tracks in its own cell, the cascade runs the consumers' reload functions in start
+  order, reaches a consumer holding only a singleton that wraps the prototype, skips a consumer
+  holding only a bean without values, a broken provider file changes
+  and cascades nothing, and a disabled consumer's instance is forgotten.
+- `ExtractResourcesTest` and `RegisterListenersTest` cover the two per-plugin features;
+  `InstantiatorTest` covers the reflective instantiators of the descriptor.
 - `DescriptorLoaderTest` and `DescriptorCompatibilityTest` cover lookup by main class and the
-  format-version rule.
+  format-version rule; `CoreDescriptorTest` loads VersatiaCore's own generated descriptor, loads
+  every processor it names and checks that the command stays conditional on CommandAPI.
 - `DependencyInjectionIntegrationTest` is end to end: it compiles three sample plugins with the
   real VersatiaAPI KSP processor (`kotlin-compile-testing`, `dev.zacsweers.kctfork`), builds
   class loaders that delegate the way Bukkit's plugin loaders do, and runs the runtime over the
   generated descriptors at start, reload and stop. Sample beans and functions report to a
-  `Recorder` on the test classpath. Nothing in these tests needs a running server.
-
-`VersatiaRuntimeTest` drives the runtime over a hand-written descriptor in the `sample` test
-package: the registry and its start order, `@FriendlyName`, the duplicate-name error, the reload
-event and the stop event, a failed or self-cancelled start followed by a disable, a self-cancelled reload, and the reload
-guards. `PluginEnhancerTest` covers `@ConditionalOnPlugin` on a bean, on its function and on an
-object's function, the start decision kept at reload, a conditional `@Primary` falling back to the
-other provider, and best-effort stop functions. The command needs a server and is not unit-tested.
+  `Recorder` on the test classpath. Nothing in these tests needs a running server; the command
+  needs one and is not unit-tested.

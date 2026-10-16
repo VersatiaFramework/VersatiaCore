@@ -1,6 +1,7 @@
 package com.github.marcoral.versatia
 
 import com.github.marcoral.versatia.di.PluginBean
+import com.github.marcoral.versatia.engine.descriptor.DescriptorLoader
 import org.bukkit.plugin.ServicePriority
 import org.bukkit.plugin.java.JavaPlugin
 
@@ -18,7 +19,7 @@ class VersatiaCore : JavaPlugin() {
         runtime = VersatiaRuntime()
         server.servicesManager.register(VersatiaEngine::class.java, runtime, this, ServicePriority.Normal)
         runtime.enhance(this)
-        logger.info("VersatiaCore has been enabled!")
+        logger.info("Runtime ready, reading descriptor format ${DescriptorLoader.supportedFormat}")
     }
 
     override fun onDisable() {
@@ -28,6 +29,5 @@ class VersatiaCore : JavaPlugin() {
             server.servicesManager.unregisterAll(this)
             runtime.close()
         }
-        logger.info("VersatiaCore has been disabled.")
     }
 }

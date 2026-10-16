@@ -1,5 +1,7 @@
 package com.github.marcoral.versatia
 
+import com.github.marcoral.versatia.di.ExposedBean
+import com.github.marcoral.versatia.di.ExposedBeanRegistry
 import com.github.marcoral.versatia.sample.Ticker
 import com.github.marcoral.versatia.testsupport.Recorder
 import com.github.marcoral.versatia.testsupport.fakePlugin
@@ -12,6 +14,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
+import org.bukkit.plugin.Plugin
 
 /** The runtime over hand-written descriptors: the registry of enhanced plugins, friendly names and the reload event. */
 class VersatiaRuntimeTest {
@@ -154,8 +157,68 @@ class VersatiaRuntimeTest {
         assertEquals("close failed", error.suppressed.single().message)
     }
 
+    /** Records that [consumer] holds a bean of [owner], as a bean session does when it injects one, and whether the bean follows [owner]'s reloads, as one with `@Value` properties does. */
+    private fun share(owner: Plugin, consumer: Plugin, followsReloads: Boolean = true) {
+        val beans = states.runtime.getOrPut(ExposedBeanRegistry.KEY) { ExposedBeanRegistry() }
+        val className = "test.Bean${beans.size}"
+        ExposedBean.Singleton(className, "bean", false, listOf(className), owner.name, Any()).also(beans::expose).obtain(consumer)
+        if (followsReloads) beans.followOwnerReloads(owner.name, className)
+    }
+
+    @Test
+    fun `a reload leaves alone the plugins holding only beans that do not follow it`() {
+        val ticker = fakePlugin("TickerPlugin", main = tickerMain)
+        val plain = fakePlugin("Plain", main = plainMain)
+        runtime.enhance(ticker)
+        runtime.enhance(plain)
+        share(plain, ticker, followsReloads = false)
+        Recorder.reset()
+
+        val outcomes = runtime.reload(listOf(plain))
+
+        assertEquals(listOf("Plain"), outcomes.map { it.name })
+        assertEquals(emptyList<String>(), Recorder.names(), "ticker holds a bean of Plain, but not one that follows its reloads")
+    }
+
+
+    @Test
+    fun `a reload goes on to the plugins holding beans of the reloaded one, once each, even in a cycle`() {
+        val ticker = fakePlugin("TickerPlugin", main = tickerMain)
+        val plain = fakePlugin("Plain", main = plainMain)
+        runtime.enhance(ticker)
+        runtime.enhance(plain)
+        share(ticker, plain)
+        share(plain, ticker)
+        Recorder.reset()
+
+        val outcomes = runtime.reload(listOf(ticker))
+
+        assertEquals(listOf("ticker" to null, "Plain" to "ticker"), outcomes.map { it.name to it.cause })
+        assertEquals(listOf("Ticker.tick"), Recorder.names(), "the way back to ticker does not reload it again")
+        assertEquals("Reloaded ticker; then Plain, which uses beans of ticker.", ReloadOutcome.summary(outcomes))
+    }
+
+    @Test
+    fun `a plugin that fails to reload after the plugin whose beans it uses is reported and undoes nothing`() {
+        val ticker = fakePlugin("TickerPlugin", main = tickerMain)
+        val plain = fakePlugin("Plain", main = plainMain)
+        runtime.enhance(ticker)
+        runtime.enhance(plain)
+        share(plain, ticker)
+        Ticker.onTick = { error("tick failed") }
+
+        runtime.reload(plain)
+        val outcomes = runtime.reload(listOf(plain))
+
+        assertEquals(listOf(null, "tick failed"), outcomes.map { it.failure?.let { e -> generateSequence(e) { c -> c.cause }.last().message } })
+        assertContains(outcomes[1].message!!, "ticker failed to reload after Plain, whose beans it uses: ")
+        assertContains(outcomes[1].message!!, "Plain stays reloaded; fix ticker and reload it")
+        assertEquals("Reloaded Plain.", ReloadOutcome.summary(outcomes))
+    }
+
     @Test
     fun `refuses a reload from inside the plugin's start or reload`() {
+
         val ticker = fakePlugin("TickerPlugin", main = tickerMain)
         Ticker.onStart = { runtime.reload(ticker) }
         val starting = assertFailsWith<EnhancementException> { runtime.enhance(ticker) }

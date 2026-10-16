@@ -3,7 +3,7 @@ package com.github.marcoral.versatia.di
 import com.github.marcoral.versatia.EnhancementContext
 import com.github.marcoral.versatia.EnhancementException
 import com.github.marcoral.versatia.EnhancementProcessor
-import com.github.marcoral.versatia.EventType
+import com.github.marcoral.versatia.Phase
 import com.github.marcoral.versatia.LifecycleEvent
 import com.github.marcoral.versatia.PluginEnhancer
 import com.github.marcoral.versatia.PluginStates
@@ -177,7 +177,7 @@ class Sign(val text: String, val clock: Clock) {
 /** Supplies the text of every [Sign], as the `@Value` processor supplies constructor properties. */
 class SignTextSupplier : EnhancementProcessor {
     override fun process(elements: List<EnhancedElement>, context: EnhancementContext) =
-        context.state[BeanResolver.KEY]!!.supply(Sign::class.qualifiedName!!, 0, "Open at ${context.event}")
+        context.state[BeanResolver.KEY]!!.supply(Sign::class.qualifiedName!!, 0) { "Open at ${context.event}" }
 }
 
 /** Unit tests of the runtime half of dependency injection with hand-written descriptors. */
@@ -199,7 +199,7 @@ class BeanLoadingTest {
         dependencies: List<String> = emptyList(),
         provides: List<String> = emptyList(),
         instantiator: Instantiator,
-        phase: EventType = EventType.PLUGIN_START_ONLY,
+        phase: Phase = Phase.PLUGIN_START_ONLY,
         name: String? = null,
         primary: Boolean = false,
         qualifiers: Map<String, String> = emptyMap(),
@@ -343,7 +343,29 @@ class BeanLoadingTest {
     }
 
     @Test
+    fun `instances made for other plugins are prepared and listed until their consumer is disabled`() {
+        enhancer.enhance(descriptor(exposedClock, prototypeTicket), context("Alpha"))
+        val alpha = states.of("Alpha")[BeanResolver.KEY]!!
+        val prepared = mutableListOf<Any>()
+        assertEquals(true, alpha.onInstanceCreated(ticketName) { prepared += it })
+        assertEquals(false, alpha.onInstanceCreated(greeterName) {}, "Alpha declares no greeter")
+
+        enhancer.enhance(descriptor(consumer), context("Beta"))
+        enhancer.enhance(descriptor(secondConsumer), context("Gamma"))
+        val tickets = Recorder.events.filter { it.first == "Ticket" }.map { it.second }
+        assertEquals(tickets, prepared, "the existing instance at once, each later one right after its constructor")
+        assertEquals(tickets, alpha.instancesOf(ticketName))
+        val registry = states.runtime[ExposedBeanRegistry.KEY]!!
+        assertEquals(setOf("Beta", "Gamma"), registry.consumersOf("Alpha"))
+
+        states.drop("Beta")
+        assertEquals(listOf(tickets[0], tickets[2]), alpha.instancesOf(ticketName))
+        assertEquals(setOf("Gamma"), registry.consumersOf("Alpha"))
+    }
+
+    @Test
     fun `beans of a disabled plugin disappear with it`() {
+
         enhancer.enhance(descriptor(exposedClock), context("Alpha"))
         enhancer.enhance(descriptor(exposedClock), context("Beta"))
         assertEquals(2, states.exposedBeanCount())
@@ -369,7 +391,7 @@ class BeanLoadingTest {
     fun `reflective instantiation reaches private classes`() {
         val hidden = EnhancedElement(
             BeanProcessors.LOCAL,
-            EventType.PLUGIN_START_ONLY,
+            Phase.PLUGIN_START_ONLY,
             AnnotationOccurrence("test.Scope"),
             ClassTarget(
                 className = "com.github.marcoral.versatia.di.Hidden",
@@ -388,12 +410,12 @@ class BeanLoadingTest {
 
     @Test
     fun `only elements of the current event are dispatched`() {
-        val atStop = element<Clock>(BeanProcessors.LOCAL, instantiator = Instantiator.Direct { Clock() }, phase = EventType.PLUGIN_STOP)
+        val atStop = element<Clock>(BeanProcessors.LOCAL, instantiator = Instantiator.Direct { Clock() }, phase = Phase.PLUGIN_STOP)
         val onReloadOrStart = element<Ticket>(
             BeanProcessors.LOCAL,
             dependencies = listOf(clockName),
             instantiator = Instantiator.Direct { Ticket(it[0] as Clock) },
-            phase = EventType.PLUGIN_RELOAD_OR_START,
+            phase = Phase.PLUGIN_RELOAD_OR_START,
         )
 
         enhancer.enhance(descriptor(atStop, exposedClock, onReloadOrStart), context("Alpha"))
@@ -442,6 +464,26 @@ class BeanLoadingTest {
 
         assertEquals("Plugin Alpha: ${Broken::class.qualifiedName} failed to reload", error.message)
         assertEquals("file missing", error.cause?.message)
+    }
+
+    @Test
+    fun `a failing constructor names the plugin, the bean and the plugin an instance is made for`() {
+        val stopped = element<Clock>(BeanProcessors.LOCAL, instantiator = Instantiator.Direct { error("clock stopped") })
+        val local = assertFailsWith<EnhancementException> { enhancer.enhance(descriptor(stopped), context("Alpha")) }
+        assertContains(local.message!!, "Plugin Alpha: bean ")
+        assertContains(local.message!!, " ($clockName) could not be created: clock stopped")
+        assertEquals("clock stopped", local.cause?.message)
+
+        var made = 0
+        val soldOut = element<Ticket>(
+            BeanProcessors.EXPOSE_PROTOTYPE,
+            dependencies = listOf(clockName),
+            instantiator = Instantiator.Direct { if (made++ == 0) Ticket(it[0] as Clock) else error("sold out") },
+        )
+        enhancer.enhance(descriptor(exposedClock, soldOut), context("Beta"))
+        val forConsumer = assertFailsWith<EnhancementException> { enhancer.enhance(descriptor(consumer), context("Gamma")) }
+        assertContains(forConsumer.message!!, "Plugin Beta: bean ")
+        assertContains(forConsumer.message!!, " ($ticketName) could not be created for Gamma: sold out")
     }
 
     @Test
@@ -530,7 +572,7 @@ class BeanLoadingTest {
     private val pluginName = Plugin::class.qualifiedName!!
     private val mainClass = EnhancedElement(
         BeanProcessors.PLUGIN,
-        EventType.PLUGIN_RELOAD_OR_START,
+        Phase.PLUGIN_RELOAD_OR_START,
         AnnotationOccurrence(PluginBean::class.java.name),
         PluginTarget("com.example.AlphaPlugin", listOf("com.example.AlphaPlugin", pluginName), emptyList()),
     )
@@ -584,7 +626,7 @@ class BeanLoadingTest {
 
         val count = EnhancedElement(
             LifecycleProcessors.AUTO_INVOKE,
-            EventType.PLUGIN_RELOAD_ONLY,
+            Phase.PLUGIN_RELOAD_ONLY,
             AnnotationOccurrence("test.Invoke"),
             FunctionTarget(
                 Counter::class.qualifiedName!!, Counter::class.java.name, "count", MemberOwner.OBJECT, emptyList(),
@@ -654,7 +696,7 @@ class BeanLoadingTest {
 
     private val booth = EnhancedElement(
         processorClass = BeanProcessors.LOCAL,
-        phase = EventType.PLUGIN_START_ONLY,
+        phase = Phase.PLUGIN_START_ONLY,
         annotation = AnnotationOccurrence("test.Scope"),
         target = ClassTarget(
             className = Booth::class.qualifiedName!!,
@@ -681,7 +723,7 @@ class BeanLoadingTest {
 
     private val sign = EnhancedElement(
         processorClass = BeanProcessors.LOCAL,
-        phase = EventType.PLUGIN_START_ONLY,
+        phase = Phase.PLUGIN_START_ONLY,
         annotation = AnnotationOccurrence("test.Scope"),
         target = ClassTarget(
             className = Sign::class.qualifiedName!!,
@@ -692,16 +734,16 @@ class BeanLoadingTest {
         ),
     )
 
-    private fun signTextSupplier(phase: EventType) = EnhancedElement(SignTextSupplier::class.java.name, phase, AnnotationOccurrence("test.Supply"), sign.target)
+    private fun signTextSupplier(phase: Phase) = EnhancedElement(SignTextSupplier::class.java.name, phase, AnnotationOccurrence("test.Supply"), sign.target)
 
     @Test
     fun `a supplied parameter takes what its processor supplied before the beans were created`() {
-        enhancer.enhance(descriptor(sign, localClock, signTextSupplier(EventType.PLUGIN_RELOAD_OR_START)), context("Alpha"))
+        enhancer.enhance(descriptor(sign, localClock, signTextSupplier(Phase.PLUGIN_RELOAD_OR_START)), context("Alpha"))
         val made = Recorder.instanceOf("Sign") as Sign
         assertEquals("Open at START", made.text)
         assertSame(Recorder.instanceOf("Clock"), made.clock)
 
-        val late = assertFailsWith<EnhancementException> { enhancer.enhance(descriptor(signTextSupplier(EventType.PLUGIN_RELOAD_OR_START)), context("Alpha", LifecycleEvent.RELOAD)) }
+        val late = assertFailsWith<EnhancementException> { enhancer.enhance(descriptor(signTextSupplier(Phase.PLUGIN_RELOAD_OR_START)), context("Alpha", LifecycleEvent.RELOAD)) }
         assertEquals("Plugin Alpha: the argument of parameter 1 of ${Sign::class.qualifiedName} was supplied after the beans had been created", late.message)
 
         val missing = assertFailsWith<EnhancementException> { enhancer.enhance(descriptor(sign, localClock), context("Beta")) }

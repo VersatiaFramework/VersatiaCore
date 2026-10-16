@@ -1,6 +1,6 @@
 package com.github.marcoral.versatia.sample
 
-import com.github.marcoral.versatia.EventType
+import com.github.marcoral.versatia.Phase
 import com.github.marcoral.versatia.FriendlyName
 import com.github.marcoral.versatia.di.BeanProcessors
 import com.github.marcoral.versatia.di.PluginBean
@@ -26,16 +26,16 @@ object VersatiaDescriptor : VersatiaPluginDescriptor {
     override val elements = listOf(
         EnhancedElement(
             BeanProcessors.PLUGIN,
-            EventType.PLUGIN_RELOAD_OR_START,
+            Phase.PLUGIN_RELOAD_OR_START,
             AnnotationOccurrence(PluginBean::class.java.name),
             PluginTarget(MAIN, listOf(MAIN, Plugin::class.qualifiedName!!), listOf(AnnotationOccurrence(FriendlyName::class.java.name, mapOf("value" to "ticker")))),
         ),
-        function("start", EventType.PLUGIN_START_ONLY) { Ticker.start() },
-        function("tick", EventType.PLUGIN_RELOAD_OR_START) { Ticker.tick() },
-        function("stop", EventType.PLUGIN_STOP) { Ticker.stop() },
+        function("start", Phase.PLUGIN_START_ONLY) { Ticker.start() },
+        function("tick", Phase.PLUGIN_RELOAD_OR_START) { Ticker.tick() },
+        function("stop", Phase.PLUGIN_STOP) { Ticker.stop() },
     )
 
-    private fun function(name: String, phase: EventType, call: () -> Unit) = EnhancedElement(
+    private fun function(name: String, phase: Phase, call: () -> Unit) = EnhancedElement(
         LifecycleProcessors.AUTO_INVOKE,
         phase,
         AnnotationOccurrence(AutoInvoke::class.java.name, mapOf("phase" to phase.name)),

@@ -4,9 +4,12 @@ import com.github.marcoral.versatia.EnhancementContext
 import com.github.marcoral.versatia.EnhancementException
 import com.github.marcoral.versatia.EnhancementProcessor
 import com.github.marcoral.versatia.LifecycleEvent
+import com.github.marcoral.versatia.StateKey
 import com.github.marcoral.versatia.classLoader
 import com.github.marcoral.versatia.di.BeanResolver
+import com.github.marcoral.versatia.di.ExposedBeanRegistry
 import com.github.marcoral.versatia.engine.descriptor.EnhancedElement
+import com.github.marcoral.versatia.engine.descriptor.MemberOwner
 import com.github.marcoral.versatia.engine.descriptor.PropertyTarget
 import com.github.marcoral.versatia.engine.descriptor.receiverOf
 import com.github.marcoral.versatia.resources.ExtractResources
@@ -19,28 +22,37 @@ import org.bukkit.configuration.ConfigurationSection
  * itself, so the values are in place before any completion action: before the plugin's
  * `Reloadable` beans are reloaded and before the `@AutoInvoke` functions run. The descriptor lists
  * the properties after the beans, so at start the beans are declared and the files extracted by
- * then; a property of a bean makes the session create the beans. Every value is read before any
- * property is set, so a broken file leaves the plugin as it was. At start, the value of a property
- * declared in a bean's constructor is supplied to that constructor, as a filled cell for a
- * `PreviousValueTracking`, instead of being set; at a reload it is set like any other. See
- * docs/runtime.md.
+ * then. Every value is read before any property is set, so a broken file leaves the plugin as it
+ * was. The values of the main class and of objects are set at once. Those of beans go to every
+ * instance, the plugin's own and each one its prototypes make for other plugins: at start they
+ * are kept and handed to the bean session, which supplies a constructor property, as a new filled
+ * cell for a `PreviousValueTracking`, and sets the body properties right after the constructor,
+ * so every instance, however late it is made, starts with the values current then; a bean
+ * constructor sees the values of the main class, of objects and of the beans it takes. At a
+ * reload the values replace the kept ones and are set on every live instance. The bean classes are
+ * marked in the exposed-bean registry, so a reload of the plugin reloads the plugins holding them,
+ * and only those. Every receiver is resolved before the first property is set, and a file path
+ * that leaves the data folder is refused. See docs/runtime.md.
  */
 class ValueEnhancementProcessor : EnhancementProcessor {
-    private val noMapper = NoMapper::class.java.name
-    private val tracking = PreviousValueTracking::class.qualifiedName
-
     override fun process(elements: List<EnhancedElement>, context: EnhancementContext) {
         val bindings = elements.map { element ->
             val target = element.target as? PropertyTarget
                 ?: throw EnhancementException("${javaClass.name} can only enhance properties, got ${element.target}")
             val arguments = element.annotation.arguments
-            Binding(target, arguments["file"] as String, arguments["key"] as String, (arguments["mapper"] as? String)?.takeIf { it != noMapper })
+            Binding(target, arguments["file"] as String, arguments["key"] as String, (arguments["mapper"] as? String)?.takeIf { it != NO_MAPPER })
         }
         val files = bindings.map { it.file }.distinct().associateWith { load(it, context) }
-        val values = bindings.map { it to read(it, files.getValue(it.file), context) }
-        val (passed, assigned) = values.partition { (binding, _) -> context.event == LifecycleEvent.START && binding.target.constructorParameter != null }
-        if (passed.isNotEmpty()) supply(passed, context)
-        assigned.forEach { (binding, value) -> assign(binding, value, context) }
+        val reader = ValueReader(context.classLoader)
+        val values = bindings.map { it to read(it, reader, files.getValue(it.file), context) }
+        val (beanValues, otherValues) = values.partition { (binding, _) -> binding.target.owner == MemberOwner.INSTANCE }
+        val starting = context.event == LifecycleEvent.START
+        val assignments = otherValues.map { (binding, value) -> Assignment(binding, receiverOf(binding, context), value) } +
+            if (starting) emptyList() else beanValues.flatMap { (binding, value) -> instancesOf(binding, context).map { Assignment(binding, it, value) } }
+        val current = context.state.getOrPut(CURRENT) { HashMap() }
+        values.forEach { (binding, value) -> current[binding.description] = value }
+        assignments.forEach { assign(it.binding, it.receiver, it.value, context) }
+        if (starting) prepare(beanValues.map { it.first }, current, context)
         context.plugin.logger.fine { "Set ${values.size} values from ${files.keys.joinToString()}" }
     }
 
@@ -48,8 +60,13 @@ class ValueEnhancementProcessor : EnhancementProcessor {
         val description get() = "${target.className}.${target.propertyName}"
     }
 
+    private class Assignment(val binding: Binding, val receiver: Any, val value: Any?)
+
     private fun load(file: String, context: EnhancementContext): ConfigurationSection {
-        val path = context.plugin.dataFolder.resolve(file)
+        val dataFolder = context.plugin.dataFolder.toPath().toAbsolutePath().normalize()
+        val path = dataFolder.resolve(file).normalize().toFile()
+        if (!path.toPath().startsWith(dataFolder) || path.toPath() == dataFolder)
+            throw failure(context, "the @Value file \"$file\" lies outside the data folder; name a path relative to it, such as config.yml")
         if (!path.isFile) missingFileMessage(file, context).let { throw failure(context, it, ConfigurationValueException(it)) }
         return try {
             loadYamlOrThrow(path)
@@ -67,36 +84,65 @@ class ValueEnhancementProcessor : EnhancementProcessor {
                 "ship it as ${ExtractResources.DIRECTORY}/$file in the JAR, which is extracted at start and reload unless @DisableVersatiaFeatures(extractResources = true) is set"
         }
 
-    private fun read(binding: Binding, file: ConfigurationSection, context: EnhancementContext) = try {
-        ValueReader(context.classLoader).read(file, binding.key, binding.target.type, binding.mapper)
-    } catch (e: EnhancementException) {
-        throw e
+    private fun read(binding: Binding, reader: ValueReader, file: ConfigurationSection, context: EnhancementContext) = try {
+        reader.read(file, binding.key, binding.target.type, binding.mapper)
     } catch (e: Exception) {
-        throw failure(context, "${binding.description} could not be read from ${binding.file}: ${e.message}", e)
+        throw failure(context, "${binding.description} could not be read from ${binding.file}: ${reasonOf(e)}", e)
+    } catch (e: LinkageError) {
+        throw failure(context, "${binding.description} could not be read from ${binding.file}: ${reasonOf(e)}", e)
     }
 
-    /** Hands the values of constructor properties to the bean session, which passes them on when it creates the beans. */
-    private fun supply(values: List<Pair<Binding, Any?>>, context: EnhancementContext) {
-        val beans = context.state[BeanResolver.KEY]
-            ?: throw failure(context, "${values.first().first.description} is declared in a bean constructor, but the plugin has no beans")
-        for ((binding, value) in values) binding.target.constructorParameter?.let { index ->
-            val argument = if (binding.target.type.name == tracking) PreviousValueTracking<Any?>().also { it.value = value } else value
-            beans.supply(binding.target.className, index, argument)
+    /**
+     * Hands the bean values to the session for every instance it makes from now on: constructor
+     * properties as supplied arguments, body properties set right after the constructor. Both read
+     * [current], so an instance made after a reload starts with the values of that reload.
+     */
+    private fun prepare(bindings: List<Binding>, current: Map<String, Any?>, context: EnhancementContext) {
+        if (bindings.isEmpty()) return
+        val beans = context.state[BeanResolver.KEY] ?: throw noBean(bindings.first(), context)
+        val exposed = ExposedBeanRegistry.of(context)
+        bindings.map { it.target.className }.distinct().forEach { exposed.followOwnerReloads(context.plugin.name, it) }
+        val (passed, assigned) = bindings.partition { it.target.constructorParameter != null }
+        for (binding in passed) beans.supply(binding.target.className, binding.target.constructorParameter!!) {
+            val value = current[binding.description]
+            if (binding.target.type.name == TRACKING) PreviousValueTracking<Any?>().also { it.value = value } else value
+        }
+        for ((className, properties) in assigned.groupBy { it.target.className }) {
+            val prepared = beans.onInstanceCreated(className) { instance -> properties.forEach { assign(it, instance, current[it.description], context) } }
+            if (!prepared) throw noBean(properties.first(), context)
         }
     }
 
-    private fun assign(binding: Binding, value: Any?, context: EnhancementContext) {
-        val target = binding.target
-        val instance = context.receiverOf(target.owner, target.className, target.binaryClassName, "set ${binding.description} on")
+    private fun receiverOf(binding: Binding, context: EnhancementContext) =
+        context.receiverOf(binding.target.owner, binding.target.className, binding.target.binaryClassName, "set ${binding.description} on")
+
+    private fun instancesOf(binding: Binding, context: EnhancementContext) =
+        context.state[BeanResolver.KEY]?.instancesOf(binding.target.className).orEmpty()
+            .ifEmpty { throw noBean(binding, context) }
+
+    private fun noBean(binding: Binding, context: EnhancementContext) = failure(context, "no bean ${binding.target.className} exists to set ${binding.description} on")
+
+    private fun assign(binding: Binding, instance: Any, value: Any?, context: EnhancementContext) {
         try {
-            target.setter.set(context.classLoader, instance, value)
-        } catch (e: EnhancementException) {
-            throw e
+            binding.target.setter.set(context.classLoader, instance, value)
         } catch (e: Exception) {
-            throw failure(context, "${binding.description} could not be set", e)
+            throw failure(context, "${binding.description} could not be set: ${reasonOf(e)}", e)
+        } catch (e: LinkageError) {
+            throw failure(context, "${binding.description} could not be set: ${reasonOf(e)}", e)
         }
     }
 
     private fun failure(context: EnhancementContext, message: String, cause: Throwable? = null) =
         EnhancementException("Plugin ${context.plugin.name}: $message", cause)
+
+    private fun reasonOf(e: Throwable) = e.message ?: e.javaClass.name
+
+    private companion object {
+        val NO_MAPPER: String = NoMapper::class.java.name
+        val TRACKING = PreviousValueTracking::class.qualifiedName
+
+
+        /** The values last read, by property: what an instance made later starts with. */
+        val CURRENT = StateKey<MutableMap<String, Any?>>("Value.current")
+    }
 }

@@ -1,7 +1,7 @@
 package com.github.marcoral.versatia.config
 
 import com.github.marcoral.versatia.EnhancementException
-import com.github.marcoral.versatia.EventType
+import com.github.marcoral.versatia.Phase
 import com.github.marcoral.versatia.LifecycleEvent
 import com.github.marcoral.versatia.PluginEnhancer
 import com.github.marcoral.versatia.PluginStates
@@ -148,7 +148,7 @@ class ValueTest {
         mapper: String = NoMapper::class.qualifiedName!!,
     ) = EnhancedElement(
         ConfigProcessors.VALUE,
-        EventType.PLUGIN_RELOAD_OR_START,
+        Phase.PLUGIN_RELOAD_OR_START,
         AnnotationOccurrence(Value::class.java.name, mapOf("key" to key, "file" to file, "mapper" to mapper)),
         PropertyTarget(T::class.qualifiedName!!, T::class.java.name, name, owner, type, emptyList(), setter),
     )
@@ -165,7 +165,7 @@ class ValueTest {
 
     private val pluginElement = EnhancedElement(
         BeanProcessors.PLUGIN,
-        EventType.PLUGIN_RELOAD_OR_START,
+        Phase.PLUGIN_RELOAD_OR_START,
         AnnotationOccurrence(PluginBean::class.java.name),
         PluginTarget(ValuesMain::class.qualifiedName!!, listOf(ValuesMain::class.qualifiedName!!, Plugin::class.qualifiedName!!), emptyList()),
     )
@@ -176,14 +176,14 @@ class ValueTest {
 
     private inline fun <reified T : Any> bean(crossinline create: () -> T) = EnhancedElement(
         BeanProcessors.LOCAL,
-        EventType.PLUGIN_START_ONLY,
+        Phase.PLUGIN_START_ONLY,
         AnnotationOccurrence("test.Scope"),
         ClassTarget(T::class.qualifiedName!!, listOf(T::class.qualifiedName!!), emptyList(), emptyList(), Instantiator.Direct { create() }),
     )
 
     private val report = EnhancedElement(
         LifecycleProcessors.AUTO_INVOKE,
-        EventType.PLUGIN_RELOAD_OR_START,
+        Phase.PLUGIN_RELOAD_OR_START,
         AnnotationOccurrence(AutoInvoke::class.java.name),
         FunctionTarget(ValuesMain::class.qualifiedName!!, ValuesMain::class.java.name, "report", MemberOwner.PLUGIN, emptyList(), emptyList(), Invoker.Direct { instance, _ -> (instance as ValuesMain).report() }),
     )
@@ -201,6 +201,18 @@ class ValueTest {
         assertEquals(Mode.HARD, Limits.mode)
         assertEquals(setOf(9, 17), shop().hours)
         assertEquals(listOf<Pair<String, Any>>("ValuesMain.report" to "Welcome"), Recorder.events.toList(), "the function sees the value")
+    }
+
+    @Test
+    fun `sets values of the plugin and objects before the beans exist, whatever the descriptor order`() {
+        file("config.yml", "motd: Welcome\nmax: 7\nshop:\n  hours: [9]\n")
+        val shop = bean<Shop> { Shop().also { Recorder.record("Shop.init", main.motd to Limits.max) } }
+        val hours = value<Shop>("hours", MemberOwner.INSTANCE, TypeReference("kotlin.collections.Set", listOf(int)), Setter.Direct { instance, v -> (instance as Shop).hours = v as Set<Int> }, key = "shop.hours")
+
+        enhancer.enhance(descriptor(pluginElement, shop, hours, motd, max), context())
+
+        assertEquals("Welcome" to 7, Recorder.instanceOf("Shop.init"))
+        assertEquals(setOf(9), shop().hours)
     }
 
     @Test
@@ -258,6 +270,25 @@ class ValueTest {
         val missing = value<Limits>("max", MemberOwner.OBJECT, int, Setter.Direct { _, v -> Limits.max = v as Int }, file = "rules/other.yml")
         val error = assertFailsWith<EnhancementException> { enhancer.enhance(descriptor(missing), context()) }
         assertContains(error.message!!, "Plugin Values: rules/other.yml is missing from the data folder and the plugin JAR has no default copy")
+    }
+
+    @Test
+    fun `refuses a file outside the data folder`() {
+        val outside = value<Limits>("max", MemberOwner.OBJECT, int, Setter.Direct { _, v -> Limits.max = v as Int }, file = "../outside.yml")
+
+        val error = assertFailsWith<EnhancementException> { enhancer.enhance(descriptor(outside), context()) }
+        assertEquals("Plugin Values: the @Value file \"../outside.yml\" lies outside the data folder; name a path relative to it, such as config.yml", error.message)
+    }
+
+    @Test
+    fun `names the plugin, the property and the file when a mapper cannot be used`() {
+        file("config.yml", "max: 3\n")
+        val property = "${Limits::class.qualifiedName}.max"
+        for ((mapper, reason) in listOf("com.example.Missing" to "com.example.Missing cannot be loaded", String::class.java.name to "java.lang.String does not implement")) {
+            val element = value<Limits>("max", MemberOwner.OBJECT, int, Setter.Direct { _, v -> Limits.max = v as Int }, mapper = mapper)
+            val error = assertFailsWith<EnhancementException> { enhancer.enhance(descriptor(element), context()) }
+            assertContains(error.message!!, "Plugin Values: $property could not be read from config.yml: $reason")
+        }
     }
 
     @Test
@@ -365,7 +396,7 @@ class ValueTest {
         val noBean = assertFailsWith<EnhancementException> { enhancer.enhance(descriptor(pluginElement, shopTax), context()) }
         assertContains(noBean.message!!, "no bean $shopName exists to set $shopName.tax on")
 
-        val onClass = EnhancedElement(ConfigProcessors.VALUE, EventType.PLUGIN_RELOAD_OR_START, AnnotationOccurrence(Value::class.java.name), shopBean.target)
+        val onClass = EnhancedElement(ConfigProcessors.VALUE, Phase.PLUGIN_RELOAD_OR_START, AnnotationOccurrence(Value::class.java.name), shopBean.target)
         val wrongTarget = assertFailsWith<EnhancementException> { enhancer.enhance(descriptor(onClass), context()) }
         assertContains(wrongTarget.message!!, "can only enhance properties")
     }

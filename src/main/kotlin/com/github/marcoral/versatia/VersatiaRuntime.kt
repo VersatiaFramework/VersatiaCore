@@ -1,5 +1,6 @@
 package com.github.marcoral.versatia
 
+import com.github.marcoral.versatia.di.ExposedBeanRegistry
 import com.github.marcoral.versatia.engine.descriptor.DescriptorLoader
 import com.github.marcoral.versatia.engine.descriptor.PluginTarget
 import com.github.marcoral.versatia.engine.descriptor.VersatiaPluginDescriptor
@@ -11,7 +12,10 @@ import org.bukkit.plugin.Plugin
  * names, and keeps the state those processors build, per plugin until it is disabled and for the
  * runtime until it is closed. Its [registry] keeps the enhanced plugins by their friendly names,
  * which is how a reload addresses them; a plugin counts as running once registered, which happens
- * only when its start completed. Nothing in here knows any particular feature; see docs/runtime.md.
+ * only when its start completed. Nothing in here knows any particular feature, except that a reload
+ * follows the exposed-bean registry to the plugins holding beans of the reloaded one that follow
+ * its reloads (those with `@Value` properties); see
+ * docs/runtime.md.
  */
 class VersatiaRuntime(
     private val states: PluginStates = PluginStates(),
@@ -20,6 +24,7 @@ class VersatiaRuntime(
     override val registry = EnhancedPlugins()
     private val starting = HashMap<Plugin, DefaultEnhancementContext>()
     private val reloading = HashMap<Plugin, DefaultEnhancementContext>()
+    private var cascade: Cascade? = null
 
     override fun enhance(plugin: Plugin) {
         if (plugin in starting || registry.friendlyNameOf(plugin) != null) throw EnhancementException("Plugin ${plugin.name} is already running")
@@ -27,14 +32,74 @@ class VersatiaRuntime(
         val context = DefaultEnhancementContext(plugin, LifecycleEvent.START, store, states.runtime)
         val descriptor = DescriptorLoader.load(plugin.pluginMeta.mainClass, context)
         val name = friendlyNameOf(descriptor, plugin)
-        registry[name]?.takeIf { it !== plugin }?.let {
-            throw EnhancementException("Plugin ${plugin.name}: the friendly name \"$name\" is already used by ${it.name}")
-        }
+        registry.checkAvailable(name, plugin)
         tracking(plugin, context, store, starting) { enhancer.enhance(descriptor, context) }
         if (!context.cancelled) registry.register(name, plugin)
     }
 
+    /** Reloads [plugin] and the plugins using its beans; a failure of [plugin] is thrown, one of the others logged. */
     override fun reload(plugin: Plugin) {
+        val outcomes = reload(listOf(plugin))
+        outcomes.first { it.plugin === plugin }.failure?.let { throw it }
+        val cascaded = outcomes.filter { it.cause != null }
+        cascaded.forEach { it.log(plugin.logger) }
+        ReloadOutcome.summary(cascaded)?.let(plugin.logger::info)
+    }
+
+    /**
+     * Reloads [requested] and then every running plugin holding a bean exposed by a plugin that
+     * reloaded, of a class marked to follow its owner's reloads (one with `@Value` properties),
+     * transitively, each once and in start order; a plugin whose reload failed passes
+     * nothing on. Failures are part of the outcomes, never thrown. Called while a reload runs, as
+     * from a reload function, it joins that reload: a plugin it already went through is refused.
+     */
+    fun reload(requested: Collection<Plugin>): List<ReloadOutcome> {
+        cascade?.let { running -> return requested.map { running.run(it, null) } }
+        val running = Cascade().also { cascade = it }
+        try {
+            requested.forEach { running.pending.putIfAbsent(it, null) }
+            while (running.pending.isNotEmpty()) {
+                val next = registry.plugins.values.firstOrNull { it in running.pending } ?: running.pending.keys.first()
+                running.run(next, running.pending.getValue(next))
+            }
+            return running.outcomes.values.toList()
+        } finally {
+            cascade = null
+        }
+    }
+
+    private inner class Cascade {
+        val outcomes = LinkedHashMap<Plugin, ReloadOutcome>()
+        val pending = LinkedHashMap<Plugin, Plugin?>()
+
+        fun run(plugin: Plugin, cause: Plugin?): ReloadOutcome {
+            val name = nameOf(plugin)
+            if (plugin in outcomes) return ReloadOutcome(name, plugin, null, EnhancementException("Plugin ${plugin.name} has already been reloaded by the reload under way; a plugin reloads at most once per reload"))
+            pending.remove(plugin)
+            val failure = try {
+                reloadAlone(plugin)
+                null
+            } catch (e: VirtualMachineError) {
+                throw e
+            } catch (e: Throwable) {
+                e
+            }
+            val outcome = ReloadOutcome(name, plugin, cause?.let(::nameOf), failure)
+            outcomes[plugin] = outcome
+            if (failure == null) consumersOf(plugin).forEach { if (it !in outcomes) pending.putIfAbsent(it, plugin) }
+            return outcome
+        }
+    }
+
+    private fun nameOf(plugin: Plugin) = registry.friendlyNameOf(plugin) ?: plugin.name
+
+    /** The running plugins holding a bean [plugin] exposes whose state follows its reloads, in start order. */
+    private fun consumersOf(plugin: Plugin): List<Plugin> {
+        val names = states.runtime[ExposedBeanRegistry.KEY]?.consumersReloadedWith(plugin.name).orEmpty()
+        return registry.plugins.values.filter { it.name in names && it !== plugin }
+    }
+
+    private fun reloadAlone(plugin: Plugin) {
         when {
             plugin in starting -> throw EnhancementException("Plugin ${plugin.name} is still starting; it can be reloaded once its start has completed")
             registry.friendlyNameOf(plugin) == null -> throw EnhancementException("Plugin ${plugin.name} is not running")

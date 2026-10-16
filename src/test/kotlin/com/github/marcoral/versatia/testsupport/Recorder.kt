@@ -49,6 +49,7 @@ fun fakePlugin(
     registrations: MutableList<Any>? = null,
     main: String? = null,
     enabledPlugins: Set<String> = emptySet(),
+    installedPlugins: Set<String> = enabledPlugins,
 ): Plugin {
     val logger = Logger.getLogger("test.$name")
     val interfaces = if (listener) arrayOf(Plugin::class.java, Listener::class.java) else arrayOf(Plugin::class.java)
@@ -58,7 +59,7 @@ fun fakePlugin(
             "getLogger" -> logger
             "getDataFolder" -> dataFolder ?: throw UnsupportedOperationException("FakePlugin $name has no data folder")
             "getDescription", "getPluginMeta" -> PluginDescriptionFile(name, "0.0.1", main ?: throw UnsupportedOperationException("FakePlugin $name has no main class"))
-            "getServer" -> fakeServer(registrations ?: mutableListOf(), enabledPlugins)
+            "getServer" -> fakeServer(registrations ?: mutableListOf(), enabledPlugins, installedPlugins)
             "isEnabled" -> true
             "toString" -> "FakePlugin($name)"
             "hashCode" -> System.identityHashCode(proxy)
@@ -68,12 +69,13 @@ fun fakePlugin(
     } as Plugin
 }
 
-/** A `Server` whose plugin manager only records the listeners registered with it and knows which plugins are enabled. */
-private fun fakeServer(registrations: MutableList<Any>, enabledPlugins: Set<String>): Server {
+/** A `Server` whose plugin manager only records the listeners registered with it and knows which plugins are installed and enabled. */
+private fun fakeServer(registrations: MutableList<Any>, enabledPlugins: Set<String>, installedPlugins: Set<String>): Server {
     val pluginManager = Proxy.newProxyInstance(Recorder::class.java.classLoader, arrayOf(PluginManager::class.java)) { _, method, args ->
         when {
             method.name == "registerEvents" -> registrations.add(args[0]).let { null }
             method.name == "isPluginEnabled" && args[0] is String -> args[0] in enabledPlugins
+            method.name == "getPlugin" -> (args[0] as String).takeIf { it in installedPlugins }?.let { fakePlugin(it) }
             else -> throw UnsupportedOperationException("FakePluginManager does not support ${method.name}")
         }
     } as PluginManager

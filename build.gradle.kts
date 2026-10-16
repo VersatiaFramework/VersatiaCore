@@ -41,6 +41,8 @@ java {
 kotlin {
     compilerOptions {
         jvmTarget = JvmTarget.JVM_21
+        // Framework code may use the plumbing marked @VersatiaInternalApi; see docs/api.md of VersatiaAPI
+        optIn.add("com.github.marcoral.versatia.VersatiaInternalApi")
     }
 }
 

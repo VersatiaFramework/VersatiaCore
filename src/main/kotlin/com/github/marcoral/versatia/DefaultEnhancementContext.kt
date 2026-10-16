@@ -22,10 +22,13 @@ class DefaultEnhancementContext(
         cancelled = true
     }
 
+    /** Runs the completion actions in registration order, including those registered by one of them, until none is left. */
     internal fun runCompletionActions() {
-        val actions = completionActions.toList()
-        completionActions.clear()
-        runSteps(actions)
+        while (completionActions.isNotEmpty()) {
+            val actions = completionActions.toList()
+            completionActions.clear()
+            runSteps(actions)
+        }
     }
 }
 

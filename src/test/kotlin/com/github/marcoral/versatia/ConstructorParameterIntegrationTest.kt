@@ -65,7 +65,7 @@ class ConstructorParameterIntegrationTest {
     fun `a constructor var and a tracking parameter receive the values at start and follow every reload`() {
         val enhance = plugin(
             """
-            import com.github.marcoral.versatia.EventType
+            import com.github.marcoral.versatia.Phase
             import com.github.marcoral.versatia.config.PreviousValueTracking
             import com.github.marcoral.versatia.config.Value
             import com.github.marcoral.versatia.di.LocalBean
@@ -92,7 +92,7 @@ class ConstructorParameterIntegrationTest {
 
                 override fun reload() = Recorder.record("Shop.reload", listOf(name, slots.value, open))
 
-                @AutoInvoke(EventType.PLUGIN_RELOAD_OR_START)
+                @AutoInvoke(Phase.PLUGIN_RELOAD_OR_START)
                 fun track() = Recorder.record("Shop.track", listOf(name, slots.previous, slots.value, slots.changed, days))
             }
             """,
@@ -119,6 +119,40 @@ class ConstructorParameterIntegrationTest {
         assertContains(failure.message!!, "Shop.slots")
         assertEquals("Beta", shop.property("name"), "nothing is set when a value fails")
         assertEquals(4, (shop.property("slots") as PreviousValueTracking<*>).value)
+    }
+
+    @Test
+    fun `a constructor sees the values of objects at start`() {
+        val enhance = plugin(
+            """
+            import com.github.marcoral.versatia.Phase
+            import com.github.marcoral.versatia.config.Value
+            import com.github.marcoral.versatia.di.LocalBean
+            import com.github.marcoral.versatia.lifecycle.AutoInvoke
+
+            object Settings {
+                @Value("settings.limit")
+                var limit = 0
+            }
+
+            @LocalBean
+            class Board(@Value("board.name") var name: String) {
+                @Value("board.size")
+                var size = 0
+
+                init {
+                    Recorder.record("Board.init", listOf(Settings.limit, name, size))
+                }
+
+                @AutoInvoke(Phase.PLUGIN_RELOAD_OR_START)
+                fun report() = Recorder.record("Board.report", size)
+            }
+            """,
+        )
+        dataFolder.resolve("config.yml").writeText("settings:\n  limit: 7\nboard:\n  name: Main\n  size: 9\n")
+        enhance(LifecycleEvent.START)
+        assertEquals(listOf(7, "Main", 0), Recorder.instanceOf("Board.init"), "properties of the bean body are set after its constructor")
+        assertEquals(9, Recorder.instanceOf("Board.report"))
     }
 
     @Test

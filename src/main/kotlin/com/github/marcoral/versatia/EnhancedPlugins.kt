@@ -8,11 +8,15 @@ class EnhancedPlugins : PluginRegistry {
 
     override val plugins: Map<String, Plugin> get() = LinkedHashMap(byName)
 
-    /** Registers [plugin] under [friendlyName]; a name another plugin holds is an error, so the plugin stays disabled. */
-    fun register(friendlyName: String, plugin: Plugin) {
+    /** Throws when another plugin holds [friendlyName]; checked before [plugin] starts, so it stays disabled. */
+    fun checkAvailable(friendlyName: String, plugin: Plugin) {
         byName[friendlyName]?.takeIf { it !== plugin }?.let {
             throw EnhancementException("Plugin ${plugin.name}: the friendly name \"$friendlyName\" is already used by ${it.name}")
         }
+    }
+
+    /** Registers [plugin] under [friendlyName], once [checkAvailable] has let it start. */
+    fun register(friendlyName: String, plugin: Plugin) {
         byName[friendlyName] = plugin
     }
 

@@ -47,6 +47,8 @@ import org.bukkit.util.Vector
  * mapper classes are loaded through [classLoader], the enhanced plugin's. See docs/runtime.md.
  */
 internal class ValueReader(private val classLoader: ClassLoader) {
+    private val mappers = HashMap<String, ValueMapper<*>>()
+
     fun read(section: ConfigurationSection, key: String, type: TypeReference, mapper: String?): Any? {
         if (section.get(key) == null) {
             if (type.nullable || type.name == TRACKING && type.arguments.single().nullable) return null
@@ -77,10 +79,11 @@ internal class ValueReader(private val classLoader: ClassLoader) {
         return clazz as Class<out Enum<*>>
     }
 
-    /** The mapper's `object` instance, or a new instance from its no-argument constructor. */
-    private fun mapperInstance(name: String): ValueMapper<*> {
-        val instance = loadClass(name).objectOrNewInstance()
-        return instance as? ValueMapper<*> ?: throw EnhancementException("$name does not implement ${ValueMapper::class.java.name}")
+    /** The mapper's `object` instance, or a new instance from its no-argument constructor, made once per reader. */
+    private fun mapperInstance(name: String) = mappers.getOrPut(name) {
+        val clazz = loadClass(name)
+        if (!ValueMapper::class.java.isAssignableFrom(clazz)) throw EnhancementException("$name does not implement ${ValueMapper::class.java.name}")
+        clazz.objectOrNewInstance() as ValueMapper<*>
     }
 
     /** Loads a class by its Kotlin qualified name, trying the binary names a nested class may have. */
@@ -88,7 +91,7 @@ internal class ValueReader(private val classLoader: ClassLoader) {
         var name = qualifiedName
         while (true) {
             try {
-                return Class.forName(name, true, classLoader)
+                return Class.forName(name, false, classLoader)
             } catch (e: ClassNotFoundException) {
                 val dot = name.lastIndexOf('.')
                 if (dot < 0) throw EnhancementException("$qualifiedName cannot be loaded: ${e.message}", e)
@@ -97,8 +100,8 @@ internal class ValueReader(private val classLoader: ClassLoader) {
         }
     }
 
-    private companion object {
-        val TRACKING = PreviousValueTracking::class.qualifiedName!!
+    internal companion object {
+        private val TRACKING = PreviousValueTracking::class.qualifiedName!!
 
         val SCALARS: Map<String, ConfigurationSection.(String) -> Any> = mapOf(
             Boolean::class.qualifiedName!! to { getBooleanOrThrow(it) },

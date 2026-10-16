@@ -1,7 +1,7 @@
 package com.github.marcoral.versatia.lifecycle
 
 import com.github.marcoral.versatia.EnhancementException
-import com.github.marcoral.versatia.EventType
+import com.github.marcoral.versatia.Phase
 import com.github.marcoral.versatia.LifecycleEvent
 import com.github.marcoral.versatia.PluginEnhancer
 import com.github.marcoral.versatia.PluginStates
@@ -78,7 +78,7 @@ class AutoInvokeTest {
         name: String,
         owner: MemberOwner,
         invoker: Invoker,
-        phase: EventType = EventType.PLUGIN_START_ONLY,
+        phase: Phase = Phase.PLUGIN_START_ONLY,
         parameters: List<String> = emptyList(),
     ) = EnhancedElement(
         LifecycleProcessors.AUTO_INVOKE,
@@ -90,14 +90,14 @@ class AutoInvokeTest {
     /** The element every real descriptor starts with; it gives the plugin its bean container. */
     private fun pluginElement(mainName: String = "com.example.Main") = EnhancedElement(
         BeanProcessors.PLUGIN,
-        EventType.PLUGIN_RELOAD_OR_START,
+        Phase.PLUGIN_RELOAD_OR_START,
         AnnotationOccurrence(PluginBean::class.java.name),
         PluginTarget(mainName, listOf(mainName, Plugin::class.qualifiedName!!), emptyList()),
     )
 
     private fun greeterBean(processorClass: String = BeanProcessors.LOCAL) = EnhancedElement(
         processorClass,
-        EventType.PLUGIN_START_ONLY,
+        Phase.PLUGIN_START_ONLY,
         AnnotationOccurrence("test.Scope"),
         ClassTarget(greeterName, listOf(greeterName), emptyList(), emptyList(), Instantiator.Direct { Greeter() }),
     )
@@ -106,7 +106,7 @@ class AutoInvokeTest {
     fun `calls functions of the plugin, of objects and of beans after beans exist`() {
         val main = MainClass()
         val elements = descriptor(
-            function<MainClass>("start", MemberOwner.PLUGIN, Invoker.Direct { instance, _ -> (instance as MainClass).start() }, EventType.PLUGIN_RELOAD_OR_START),
+            function<MainClass>("start", MemberOwner.PLUGIN, Invoker.Direct { instance, _ -> (instance as MainClass).start() }, Phase.PLUGIN_RELOAD_OR_START),
             function<Greeter>("greet", MemberOwner.INSTANCE, Invoker.Direct { instance, _ -> (instance as Greeter).greet() }),
             function<Registry>("refresh", MemberOwner.OBJECT, Invoker.Direct { _, _ -> Registry.refresh() }),
             greeterBean(),
@@ -165,10 +165,10 @@ class AutoInvokeTest {
             "welcome",
             MemberOwner.PLUGIN,
             Invoker.Direct { instance, args -> (instance as MainClass).welcome(args[0] as Greeter) },
-            phase = EventType.PLUGIN_RELOAD_OR_START,
+            phase = Phase.PLUGIN_RELOAD_OR_START,
             parameters = listOf(greeterName),
         )
-        val greetOnStop = function<Greeter>("greet", MemberOwner.INSTANCE, Invoker.Direct { instance, _ -> (instance as Greeter).greet() }, EventType.PLUGIN_STOP)
+        val greetOnStop = function<Greeter>("greet", MemberOwner.INSTANCE, Invoker.Direct { instance, _ -> (instance as Greeter).greet() }, Phase.PLUGIN_STOP)
         val elements = descriptor(welcome, greetOnStop, greeterBean())
 
         enhancer.enhance(elements, context("Alpha", plugin = main))
@@ -191,7 +191,7 @@ class AutoInvokeTest {
         val hiddenName = "com.github.marcoral.versatia.lifecycle.HiddenRegistry"
         val hidden = EnhancedElement(
             LifecycleProcessors.AUTO_INVOKE,
-            EventType.PLUGIN_START_ONLY,
+            Phase.PLUGIN_START_ONLY,
             AnnotationOccurrence(AutoInvoke::class.java.name),
             FunctionTarget(hiddenName, hiddenName, "reset", MemberOwner.OBJECT, emptyList(), listOf(Parameter(greeterName)), Invoker.Reflective(hiddenName, "reset", listOf(greeterName))),
         )
@@ -206,8 +206,8 @@ class AutoInvokeTest {
     fun `respects the phase`() {
         val main = MainClass()
         val elements = descriptor(
-            function<MainClass>("start", MemberOwner.PLUGIN, Invoker.Direct { instance, _ -> (instance as MainClass).start() }, EventType.PLUGIN_START_ONLY),
-            function<MainClass>("stop", MemberOwner.PLUGIN, Invoker.Direct { instance, _ -> (instance as MainClass).stop() }, EventType.PLUGIN_STOP),
+            function<MainClass>("start", MemberOwner.PLUGIN, Invoker.Direct { instance, _ -> (instance as MainClass).start() }, Phase.PLUGIN_START_ONLY),
+            function<MainClass>("stop", MemberOwner.PLUGIN, Invoker.Direct { instance, _ -> (instance as MainClass).stop() }, Phase.PLUGIN_STOP),
         )
 
         enhancer.enhance(elements, context("Alpha", plugin = main))

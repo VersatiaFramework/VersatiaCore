@@ -69,7 +69,7 @@ class DependencyInjectionIntegrationTest {
     private val alphaSource = """
         package com.example.alpha
 
-        import com.github.marcoral.versatia.EventType
+        import com.github.marcoral.versatia.Phase
         import com.github.marcoral.versatia.VersatiaPlugin
         import com.github.marcoral.versatia.di.ExposePrototype
         import com.github.marcoral.versatia.di.ExposeSingleton
@@ -78,7 +78,6 @@ class DependencyInjectionIntegrationTest {
         import com.github.marcoral.versatia.di.Qualifier
         import com.github.marcoral.versatia.lifecycle.AutoInvoke
         import com.github.marcoral.versatia.testsupport.Recorder
-import com.github.marcoral.versatia.testsupport.exposedBeanCount
         import org.bukkit.plugin.Plugin
 
         class AlphaPlugin : VersatiaPlugin()
@@ -126,18 +125,18 @@ import com.github.marcoral.versatia.testsupport.exposedBeanCount
         private class HiddenAudit(val greeter: Greeter, val ticket: Ticket) {
             init { Recorder.record("HiddenAudit", this) }
 
-            @AutoInvoke(EventType.PLUGIN_START_ONLY)
+            @AutoInvoke(Phase.PLUGIN_START_ONLY)
             private fun report(secret: Secret) { Recorder.record("HiddenAudit.report", secret) }
 
-            @AutoInvoke(EventType.PLUGIN_START_ONLY)
+            @AutoInvoke(Phase.PLUGIN_START_ONLY)
             fun complain(@Qualifier("grumpy") greeter: Greeter) { Recorder.record("HiddenAudit.complain", greeter) }
         }
 
         object Startup {
-            @AutoInvoke(EventType.PLUGIN_RELOAD_OR_START)
+            @AutoInvoke(Phase.PLUGIN_RELOAD_OR_START)
             fun ready(clock: Clock) { Recorder.record("Startup.ready", clock) }
 
-            @AutoInvoke(EventType.PLUGIN_STOP)
+            @AutoInvoke(Phase.PLUGIN_STOP)
             fun bye() { Recorder.record("Startup.bye", this) }
         }
     """.trimIndent()
@@ -150,7 +149,6 @@ import com.github.marcoral.versatia.testsupport.exposedBeanCount
         import com.github.marcoral.versatia.VersatiaPlugin
         import com.github.marcoral.versatia.di.LocalBean
         import com.github.marcoral.versatia.testsupport.Recorder
-import com.github.marcoral.versatia.testsupport.exposedBeanCount
 
         class BetaPlugin : VersatiaPlugin()
 
@@ -172,7 +170,6 @@ import com.github.marcoral.versatia.testsupport.exposedBeanCount
         import com.github.marcoral.versatia.VersatiaPlugin
         import com.github.marcoral.versatia.di.LocalBean
         import com.github.marcoral.versatia.testsupport.Recorder
-import com.github.marcoral.versatia.testsupport.exposedBeanCount
 
         class GammaPlugin : VersatiaPlugin()
 

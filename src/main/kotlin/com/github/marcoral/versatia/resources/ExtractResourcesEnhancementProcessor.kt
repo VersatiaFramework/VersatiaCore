@@ -11,7 +11,6 @@ import java.io.InputStream
 import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
 import java.nio.file.LinkOption
-import java.nio.file.StandardOpenOption
 import java.util.jar.JarFile
 
 /**
@@ -56,7 +55,8 @@ class ExtractResourcesEnhancementProcessor : EnhancementProcessor {
     /**
      * Writes the file into the data folder unless something, even a dangling symbolic link, already
      * exists there; true when it was written. The path is checked lexically, so a configuration file
-     * the admin replaced with a link to a shared copy is simply left alone.
+     * the admin replaced with a link to a shared copy is simply left alone. The content goes to a
+     * temporary file next to the destination first, so a failed copy never leaves half a file behind.
      */
     private fun extract(path: String, content: InputStream, context: EnhancementContext): Boolean {
         val dataFolder = context.plugin.dataFolder.toPath().toAbsolutePath().normalize()
@@ -65,11 +65,15 @@ class ExtractResourcesEnhancementProcessor : EnhancementProcessor {
             throw EnhancementException("Plugin ${context.plugin.name}: resource $path would be written outside the data folder")
         if (Files.exists(destination, LinkOption.NOFOLLOW_LINKS)) return false
         Files.createDirectories(destination.parent)
+        val temporary = Files.createTempFile(destination.parent, ".${destination.fileName}", ".tmp")
         return try {
-            Files.newOutputStream(destination, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE).use { content.copyTo(it) }
+            Files.newOutputStream(temporary).use { content.copyTo(it) }
+            Files.move(temporary, destination)
             true
         } catch (e: FileAlreadyExistsException) {
             false
+        } finally {
+            Files.deleteIfExists(temporary)
         }
     }
 }

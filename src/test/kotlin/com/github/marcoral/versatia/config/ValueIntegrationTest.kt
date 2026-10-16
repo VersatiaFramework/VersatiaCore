@@ -28,7 +28,7 @@ class ValueIntegrationTest {
     private val source = """
         package com.example.values
 
-        import com.github.marcoral.versatia.EventType
+        import com.github.marcoral.versatia.Phase
         import com.github.marcoral.versatia.VersatiaPlugin
         import com.github.marcoral.versatia.config.PreviousValueTracking
         import com.github.marcoral.versatia.config.Value
@@ -48,7 +48,7 @@ class ValueIntegrationTest {
             @Value("limits.mode", file = "rules.yml")
             var mode = Mode.EASY
 
-            @AutoInvoke(EventType.PLUGIN_RELOAD_OR_START)
+            @AutoInvoke(Phase.PLUGIN_RELOAD_OR_START)
             fun report() = Recorder.record("Limits.report", max to mode)
         }
 
@@ -66,10 +66,10 @@ class ValueIntegrationTest {
             @Value("shop.zone")
             private val zone = PreviousValueTracking<String?>()
 
-            @AutoInvoke(EventType.PLUGIN_RELOAD_OR_START)
+            @AutoInvoke(Phase.PLUGIN_RELOAD_OR_START)
             fun report() = Recorder.record("Shop.report", hours to tax)
 
-            @AutoInvoke(EventType.PLUGIN_RELOAD_OR_START)
+            @AutoInvoke(Phase.PLUGIN_RELOAD_OR_START)
             fun track() = Recorder.record("Shop.track", listOf(slots.previous, slots.value, slots.changed, zone.value))
         }
     """.trimIndent()
