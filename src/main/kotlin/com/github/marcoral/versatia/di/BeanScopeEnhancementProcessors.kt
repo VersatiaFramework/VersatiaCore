@@ -7,6 +7,7 @@ import com.github.marcoral.versatia.LifecycleEvent
 import com.github.marcoral.versatia.engine.descriptor.ClassTarget
 import com.github.marcoral.versatia.engine.descriptor.EnhancedElement
 import com.github.marcoral.versatia.engine.descriptor.PluginTarget
+import com.github.marcoral.versatia.targetAs
 
 /**
  * Shared by the three scope processors: every element becomes a bean definition in the plugin's
@@ -14,11 +15,7 @@ import com.github.marcoral.versatia.engine.descriptor.PluginTarget
  */
 abstract class BeanScopeEnhancementProcessor(private val scope: BeanScope) : EnhancementProcessor {
     override fun process(elements: List<EnhancedElement>, context: EnhancementContext) {
-        val definitions = elements.map { element ->
-            val target = element.target as? ClassTarget
-                ?: throw EnhancementException("${javaClass.name} can only enhance classes, got ${element.target}")
-            BeanDefinition.of(scope, target)
-        }
+        val definitions = elements.map { BeanDefinition.of(scope, it.targetAs<ClassTarget>(this)) }
         PluginBeanSession.of(context).declare(context, definitions)
     }
 }

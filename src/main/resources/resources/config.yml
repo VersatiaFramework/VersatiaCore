@@ -1,0 +1,2 @@
+# Logs every step of each Versatia plugin's start, reload and stop at INFO; for diagnosing a plugin, off otherwise
+debug: false

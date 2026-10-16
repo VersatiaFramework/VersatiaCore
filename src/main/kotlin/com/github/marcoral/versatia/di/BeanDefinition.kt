@@ -7,7 +7,7 @@ import com.github.marcoral.versatia.engine.descriptor.Parameter
 import com.github.marcoral.versatia.engine.descriptor.PluginTarget
 import com.github.marcoral.versatia.engine.descriptor.occurrenceOf
 
-enum class BeanScope { LOCAL, EXPOSED_SINGLETON, EXPOSED_PROTOTYPE }
+enum class BeanScope(val label: String) { LOCAL("local"), EXPOSED_SINGLETON("exposed singleton"), EXPOSED_PROTOTYPE("exposed prototype") }
 
 /**
  * Something to inject: a type and, optionally, the name of the bean that must provide it. An

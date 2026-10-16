@@ -8,6 +8,8 @@ Kotlin/JVM project; everything below is about how it adapts to each developer's 
 - Paper 1.21.4 requires Java 21, so both `java` and `kotlin` blocks target JVM 21.
   Any JDK 21 or newer can compile the project; no Gradle toolchain download is configured.
 - Gradle comes from the wrapper (`gradlew`), so nothing has to be installed globally.
+- Versions come from the shared catalog `VersatiaCatalog` (published by VersatiaAPI), imported
+  as `libs` in `settings.gradle.kts` at the `versatiaVersion` from `gradle.properties`.
 - `kotlin-stdlib` and `kotlin-reflect` are not bundled into the JAR. `plugin.yml` lists them under
   `libraries:` and Paper downloads them at server start. The version placeholder is filled from the
   Kotlin Gradle plugin version during `processResources`, so the versions can never drift apart.
@@ -69,7 +71,7 @@ in VersatiaAPI. Three test-only dependencies make the end-to-end test possible:
 - `VersatiaAPI-ksp`, the real KSP processor, resolved from the local Maven repository like the
   API,
 - `dev.zacsweers.kctfork:ksp`, which runs the Kotlin compiler with KSP in-process. It is built
-  against exact Kotlin and KSP versions, so bump it together with the Kotlin plugin,
+  against exact Kotlin and KSP versions, so bump it together with the Kotlin plugin (all three in the catalog),
 - `paper-api` as `testImplementation`: the tests stand in for a plugin with a `java.lang.reflect.Proxy`
   implementing `org.bukkit.plugin.Plugin`, which needs the interface at runtime. VersatiaAPI
   exports it for compilation only, so a plugin's own tests need the same declaration.

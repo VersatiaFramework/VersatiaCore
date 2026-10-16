@@ -1,16 +1,16 @@
 package com.github.marcoral.versatia.event
 
 import com.github.marcoral.versatia.EnhancementContext
-import com.github.marcoral.versatia.EnhancementException
 import com.github.marcoral.versatia.EnhancementProcessor
 import com.github.marcoral.versatia.classLoader
 import com.github.marcoral.versatia.di.BeanResolver
 import com.github.marcoral.versatia.engine.descriptor.ClassTarget
-import com.github.marcoral.versatia.engine.descriptor.ElementTarget
 import com.github.marcoral.versatia.engine.descriptor.EnhancedElement
-import com.github.marcoral.versatia.engine.descriptor.FunctionTarget
+import com.github.marcoral.versatia.engine.descriptor.MemberTarget
 import com.github.marcoral.versatia.engine.descriptor.PluginTarget
-import com.github.marcoral.versatia.engine.descriptor.PropertyTarget
+import com.github.marcoral.versatia.failure
+import com.github.marcoral.versatia.inject
+import com.github.marcoral.versatia.targetAs
 import org.bukkit.event.Listener
 
 /**
@@ -21,26 +21,17 @@ import org.bukkit.event.Listener
  */
 class RegisterListenersEnhancementProcessor : EnhancementProcessor {
     override fun process(elements: List<EnhancedElement>, context: EnhancementContext) = context.onPluginEnhanced {
-        val beans = context.state[BeanResolver.KEY]
-        for (element in elements) context.plugin.server.pluginManager.registerEvents(listenerOf(element.target, context, beans), context.plugin)
+        for (element in elements) context.plugin.server.pluginManager.registerEvents(listenerOf(element, context), context.plugin)
         context.plugin.logger.fine { "Registered ${elements.size} listeners: ${elements.joinToString { it.target.className }}" }
     }
 
-    private fun listenerOf(target: ElementTarget, context: EnhancementContext, beans: BeanResolver?): Listener {
-        val instance = when (target) {
+    private fun listenerOf(element: EnhancedElement, context: EnhancementContext): Listener {
+        val instance = when (val target = element.target) {
             is PluginTarget -> context.plugin
-            is ClassTarget -> beans?.instanceOf(target.className) ?: create(target, context, beans)
-            is FunctionTarget, is PropertyTarget -> throw EnhancementException("${javaClass.name} can only enhance classes, got $target")
+            is ClassTarget -> context.state[BeanResolver.KEY]?.instanceOf(target.className)
+                ?: target.instantiator.create(context.classLoader, context.inject(target.className, target.constructorParameters))
+            is MemberTarget -> element.targetAs<ClassTarget>(this)
         }
-        return instance as? Listener ?: throw EnhancementException("Plugin ${context.plugin.name}: ${target.className} is not a Listener")
-    }
-
-    private fun create(target: ClassTarget, context: EnhancementContext, beans: BeanResolver?): Any {
-        val arguments = when {
-            target.constructorParameters.isEmpty() -> emptyList()
-            beans == null -> throw EnhancementException("Plugin ${context.plugin.name}: ${target.className} needs injected constructor parameters, but the plugin has no beans")
-            else -> beans.resolve(target.className, target.constructorParameters)
-        }
-        return target.instantiator.create(context.classLoader, arguments)
+        return instance as? Listener ?: throw context.failure("${element.target.className} is not a Listener")
     }
 }

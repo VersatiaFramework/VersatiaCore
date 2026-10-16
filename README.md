@@ -34,7 +34,11 @@ The current version (`0.0.1`) provides:
   listeners are registered;
 - reload: `VersatiaEngine.reload` and, with the [CommandAPI](https://commandapi.dev/) plugin
   installed, `/versatia reload [plugin]` run the reload phase of every Versatia plugin or of one,
-  then of the plugins holding its beans with `@Value` properties;
+  then of the plugins holding its beans with `@Value` properties; `/versatia info [plugin]` lists
+  the running plugins, or one plugin's beans, consumers and `@Value` files; every event refuses to
+  run off the server's main thread;
+- debug mode: `debug: true` in VersatiaCore's `config.yml` logs every step of each plugin's start,
+  reload and stop;
 - `@ConditionalOnPlugin`: elements are skipped for the plugin's lifetime when the plugins they need
   were not enabled at its start.
 
@@ -45,7 +49,7 @@ The current version (`0.0.1`) provides:
   in its checkout once, and again after every change there (it publishes both `VersatiaAPI`
   and `VersatiaAPI-ksp`, the latter is used by this project's tests)
 - Nothing else. Gradle is downloaded automatically by the wrapper (`gradlew`). On the server, the
-  CommandAPI plugin is optional; it enables `/versatia reload`.
+  CommandAPI plugin is optional; it enables `/versatia reload` and `/versatia info`.
 
 ## Building
 
@@ -89,6 +93,8 @@ still works and the copy step is skipped. The path can also be passed for a sing
   compile sample plugins with the real KSP processor (dependency injection, constructor
   parameters, values across plugins); see the Tests section of [docs/runtime.md](docs/runtime.md)
 - `src/main/resources/plugin.yml` – plugin metadata (version and Kotlin version are filled in by Gradle)
+- `src/main/resources/resources/config.yml` – VersatiaCore's own configuration (`debug`), extracted
+  into `plugins/VersatiaCore/`
 - `local.properties.example` – template for local settings
 - `docs/architecture.md` – how VersatiaAPI and VersatiaCore cooperate
 - `docs/runtime.md` – enhancement pipeline and dependency injection at runtime

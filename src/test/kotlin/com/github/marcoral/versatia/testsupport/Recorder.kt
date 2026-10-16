@@ -39,7 +39,8 @@ object Recorder {
  * enabled, and nothing else. A real `JavaPlugin` cannot exist outside a Bukkit plugin class
  * loader. The proxy class is defined in [classLoader], so `plugin.javaClass.classLoader` behaves
  * like a real plugin's; with [listener] it implements `Listener` too, like a main class that
- * listens to events.
+ * listens to events. The server answers that the caller runs on the main thread while
+ * [primaryThread] returns true.
  */
 fun fakePlugin(
     name: String,
@@ -50,6 +51,7 @@ fun fakePlugin(
     main: String? = null,
     enabledPlugins: Set<String> = emptySet(),
     installedPlugins: Set<String> = enabledPlugins,
+    primaryThread: () -> Boolean = { true },
 ): Plugin {
     val logger = Logger.getLogger("test.$name")
     val interfaces = if (listener) arrayOf(Plugin::class.java, Listener::class.java) else arrayOf(Plugin::class.java)
@@ -59,7 +61,7 @@ fun fakePlugin(
             "getLogger" -> logger
             "getDataFolder" -> dataFolder ?: throw UnsupportedOperationException("FakePlugin $name has no data folder")
             "getDescription", "getPluginMeta" -> PluginDescriptionFile(name, "0.0.1", main ?: throw UnsupportedOperationException("FakePlugin $name has no main class"))
-            "getServer" -> fakeServer(registrations ?: mutableListOf(), enabledPlugins, installedPlugins)
+            "getServer" -> fakeServer(registrations ?: mutableListOf(), enabledPlugins, installedPlugins, primaryThread)
             "isEnabled" -> true
             "toString" -> "FakePlugin($name)"
             "hashCode" -> System.identityHashCode(proxy)
@@ -69,8 +71,8 @@ fun fakePlugin(
     } as Plugin
 }
 
-/** A `Server` whose plugin manager only records the listeners registered with it and knows which plugins are installed and enabled. */
-private fun fakeServer(registrations: MutableList<Any>, enabledPlugins: Set<String>, installedPlugins: Set<String>): Server {
+/** A `Server` whose plugin manager only records the listeners registered with it and knows which plugins are installed and enabled, and that knows which thread is the main one. */
+private fun fakeServer(registrations: MutableList<Any>, enabledPlugins: Set<String>, installedPlugins: Set<String>, primaryThread: () -> Boolean): Server {
     val pluginManager = Proxy.newProxyInstance(Recorder::class.java.classLoader, arrayOf(PluginManager::class.java)) { _, method, args ->
         when {
             method.name == "registerEvents" -> registrations.add(args[0]).let { null }
@@ -80,7 +82,11 @@ private fun fakeServer(registrations: MutableList<Any>, enabledPlugins: Set<Stri
         }
     } as PluginManager
     return Proxy.newProxyInstance(Recorder::class.java.classLoader, arrayOf(Server::class.java)) { _, method, _ ->
-        if (method.name == "getPluginManager") pluginManager else throw UnsupportedOperationException("FakeServer does not support ${method.name}")
+        when (method.name) {
+            "getPluginManager" -> pluginManager
+            "isPrimaryThread" -> primaryThread()
+            else -> throw UnsupportedOperationException("FakeServer does not support ${method.name}")
+        }
     } as Server
 }
 

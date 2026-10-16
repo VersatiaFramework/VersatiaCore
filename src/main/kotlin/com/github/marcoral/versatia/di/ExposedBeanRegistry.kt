@@ -22,6 +22,9 @@ class ExposedBeanRegistry {
 
     fun candidatesFor(type: String) = beans.filter { type in it.assignableTypes }
 
+    /** The beans [owner] exposes, in the order it exposed them. */
+    fun ownedBy(owner: String) = beans.filter { it.owner == owner }
+
     fun removeOwnedBy(owner: String) {
         beans.removeAll { it.owner == owner }
         following.remove(owner)

@@ -2,6 +2,8 @@ package com.github.marcoral.versatia
 
 import com.github.marcoral.versatia.config.PreviousValueTracking
 import com.github.marcoral.versatia.di.BeanResolver
+import com.github.marcoral.versatia.engine.command.PluginInfo
+import com.github.marcoral.versatia.engine.descriptor.VersatiaPluginDescriptor
 import com.github.marcoral.versatia.ksp.VersatiaSymbolProcessorProvider
 import com.github.marcoral.versatia.testsupport.Recorder
 import com.github.marcoral.versatia.testsupport.fakePlugin
@@ -11,12 +13,16 @@ import com.tschuchort.compiletesting.SourceFile
 import com.tschuchort.compiletesting.configureKsp
 import java.io.File
 import java.net.URLClassLoader
+import java.util.logging.Handler
+import java.util.logging.LogRecord
+import java.util.logging.Logger
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotSame
+import kotlin.test.assertTrue
 import org.bukkit.plugin.Plugin
 import org.jetbrains.kotlin.compiler.plugin.ExperimentalCompilerApi
 import org.junit.jupiter.api.io.TempDir
@@ -24,7 +30,8 @@ import org.junit.jupiter.api.io.TempDir
 /**
  * End to end, compiled with the real KSP processor and run through the runtime: the `@Value`
  * properties of a prototype exposed by Economy reach the instances made for Shop and Auction, and
- * a reload of Economy reloads them too. See docs/runtime.md.
+ * a reload of Economy reloads them too; debug mode and `/versatia info` describe the same plugins.
+ * See docs/runtime.md.
  */
 @OptIn(ExperimentalCompilerApi::class)
 class CrossPluginValueIntegrationTest {
@@ -229,5 +236,58 @@ class CrossPluginValueIntegrationTest {
 
         assertEquals(2, shopPrices.property("base"))
         assertEquals(4, auctionPrices.property("base"))
+    }
+
+    @Test
+    fun `debug mode describes each step only while it is on, and info reads what the runtime keeps`() {
+        val lines = mutableListOf<String>()
+        val logger = Logger.getLogger("test.debug").apply {
+            useParentHandlers = false
+            addHandler(object : Handler() {
+                override fun publish(record: LogRecord) {
+                    lines += record.message
+                }
+
+                override fun flush() = Unit
+
+                override fun close() = Unit
+            })
+        }
+        var debug = false
+        val runtime = VersatiaRuntime(PluginStates(), debugLog = DebugLog(logger) { debug })
+        val economyResult = compile("Economy", economySource)
+        val economy = plugin("Economy", economyResult, Recorder::class.java.classLoader)
+        val shop = plugin("Shop", compile("Shop", consumerSource("Shop"), economyResult), economy.javaClass.classLoader)
+        val bank = plugin("Bank", compile("Bank", bankSource, economyResult), economy.javaClass.classLoader)
+        economyConfig.writeText("base: 1\nrate: 5\ntax: 0.125\n")
+
+        runtime.enhance(economy)
+        assertEquals(emptyList(), lines, "debug mode is off")
+        debug = true
+        runtime.enhance(shop)
+        runtime.enhance(bank)
+        runtime.reload(economy)
+        runtime.reload(shop)
+        runtime.disable(bank)
+
+        val format = VersatiaPluginDescriptor.FORMAT_VERSION
+        fun logged(prefix: String) = assertTrue(lines.any { it.startsWith(prefix) }, "no line starts with \"$prefix\" in $lines")
+        logged("[debug] Shop START: descriptor format $format, ")
+        logged("[debug] Shop START: AutoInvokeEnhancementProcessor receives Counter.report()")
+        logged("[debug] Shop START: created 2 beans: ")
+        logged("[debug] Economy RELOAD: set 3 values, config.yml: ")
+        logged("[debug] Economy RELOAD: goes on to Shop, holding beans that follow its reloads")
+        logged("[debug] Shop RELOAD: no running plugin holds a bean that follows its reloads")
+        logged("[debug] Bank STOP: descriptor format $format, ")
+        assertTrue(lines.none { "0.125" in it }, "values are never logged")
+
+        val info = PluginInfo(runtime)
+        assertEquals(listOf("Economy (Economy 0.0.1), descriptor format $format", "Shop (Shop 0.0.1), descriptor format $format"), info.overview())
+        val economyInfo = info.details(economy)
+        assertContains(economyInfo, "  \"priceList\" $priceList, exposed prototype")
+        assertContains(economyInfo, "Exposed beans used by others: \"priceList\" by Shop")
+        assertContains(economyInfo, "Reloads cascade to: Shop")
+        assertContains(economyInfo, "@Value files: config.yml")
+        assertEquals(listOf("Reloads cascade to: none", "@Value files: none"), info.details(shop).takeLast(2))
     }
 }

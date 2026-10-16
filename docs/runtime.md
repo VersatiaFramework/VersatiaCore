@@ -13,8 +13,10 @@ lives in its processors; the classes of the root package know none of them.
 
 1. `VersatiaCore.onEnable` creates a `VersatiaRuntime`, registers it in Bukkit's
    `ServicesManager` under the `VersatiaEngine` interface from VersatiaAPI and enhances
-   VersatiaCore itself: the main class carries `@PluginBean`, the build runs the KSP processor,
-   and the generated descriptor is what hooks the `/versatia` command in. That interface is the
+   VersatiaCore itself: the main class carries `@PluginBean` and `@ExtractResources`, the build
+   runs the KSP processor, and the generated descriptor is what hooks the `/versatia` command and
+   VersatiaCore's own `config.yml` in (shipped as `resources/config.yml`, its `debug` key read by a
+   `@Value` property of the main class; see Debug mode below). That interface is the
    only link between a plugin and the runtime; plugins never compile against VersatiaCore.
 2. A plugin's main class extends `VersatiaPlugin`. Its final `onEnable` looks the engine up and
    calls `enhance(this)`; `onDisable` calls `disable(this)`. There is nothing to override: start-up
@@ -133,6 +135,34 @@ plugin's descriptor at `LifecycleEvent`s and dispatches only the elements whose 
 `EnhancementContext.event` tells a processor which event it is serving. The bean scopes run at
 `PLUGIN_START_ONLY`.
 
+### Main thread
+
+Every event touches Bukkit state (listeners, commands, beans other plugins hold), so
+`VersatiaRuntime.enhance`, both `reload` overloads and `disable` first ask the plugin's server
+whether they run on the main thread and otherwise throw before anything runs: `Plugin X: reload
+must run on the server's main thread; schedule it with plugin.runTask { ... }` (`start` and `stop`
+likewise). The API's `VersatiaEngine.dispatchConsoleCommand` checks the same through
+`VersatiaEngine.checkPrimaryThread(action)`, an `IllegalStateException`. Pure helpers check nothing.
+
+### Debug mode
+
+With `debug: true` in VersatiaCore's `config.yml` (read at start and at every reload of
+VersatiaCore, so `/versatia reload VersatiaCore` switches it), every step of each plugin's events
+is logged by VersatiaCore at `INFO`, as `[debug] <plugin> <EVENT>: <step>`:
+
+| Step | Written by | Line |
+|---|---|---|
+| descriptor | `PluginEnhancer` | `descriptor format 1.3, 12 elements, 7 for this event` |
+| skipped element | `PluginEnhancer` | `skipped VaultBridge: @ConditionalOnPlugin(Vault) is not met` (at every event, unlike the `INFO` line at start) |
+| dispatch | `PluginEnhancer` | `AutoInvokeEnhancementProcessor receives Reports.report(), Shop.open()` |
+| beans | `PluginBeanSession` | `created 3 beans: "plugin" (...), ...` and `exposes "prices" (...) as exposed prototype` |
+| values | `ValueEnhancementProcessor` | `set 3 values, config.yml: base, rate, tax` (keys only, never the values) |
+| cascade | `VersatiaRuntime` | `goes on to Shop, holding beans that follow its reloads` or `no running plugin holds a bean that follows its reloads` |
+
+The `DebugLog` lives in the runtime state; a processor writes through the internal
+`EnhancementContext.debug { }`, whose message is not even built while the switch is off, so debug
+mode off costs one boolean read per step and writes nothing.
+
 ### Conditions
 
 `@ConditionalOnPlugin` is the second generic filter of `PluginEnhancer`, next to the phase: an
@@ -149,7 +179,9 @@ occurrence next to it. The skipped classes are logged at `INFO` when the plugin 
 per missing plugin, so an administrator sees why a command is missing: `Skipped VersatiaCommand:
 CommandAPI is not installed`, or, for a plugin that is installed but was not enabled yet,
 `Skipped VaultBridge: Vault is installed but was not enabled before MyPlugin; list it under
-softdepend: in plugin.yml`. The filter reads the recorded attribute and knows
+softdepend: in plugin.yml`. A function or property skipped by a condition of its own, not its
+class's, is named as the member (`Skipped JoinBonus.vaultFound(): Vault is not installed`), since
+its class is still loaded. The filter reads the recorded attribute and knows
 no feature; the class behind a skipped element is never loaded, which is what lets it reference
 an optional plugin's classes.
 
@@ -172,8 +204,17 @@ CommandAPI fails to register or unregister the command, typically because the in
 not compatible with the 12.x one VersatiaCore is built against, VersatiaCore logs one warning,
 `/versatia could not be registered. The installed CommandAPI <version> may not be compatible ...`,
 and keeps running without the command; an unknown name answers with the registered ones, which tab completion offers too.
-VersatiaCore itself is in the registry, so a full reload includes it; its only reload element is
-its plugin bean, whose session has nothing reloadable, so this changes nothing.
+VersatiaCore itself is in the registry, so a full reload includes it: it restores a deleted
+`config.yml` and reads `debug` again.
+
+`/versatia info [plugin]`, behind `versatia.core.command.info` (default op), is read-only.
+Without an argument it lists the running Versatia plugins, one line each:
+`shop (Shop 1.2.0), descriptor format 1.3`. With a friendly name it adds the plugin's beans
+(`  "prices" com.example.PriceList, exposed prototype`), `Exposed beans used by others: "prices" by
+Auction`, `Reloads cascade to: Auction` and `@Value files: config.yml`, each `none` when empty.
+`PluginInfo` gathers the lines without CommandAPI types: the registry, the plugin's bean session
+(`PluginBeanSession.beans`), the exposed-bean registry (`ownedBy`, `consumersReloadedWith`) and the
+descriptor, read again through `DescriptorLoader.load(plugin)` for its format and `@Value` files.
 
 ## Bean processors (`di`)
 
@@ -312,10 +353,10 @@ after every other processor of the event has finished, in particular after the b
 plugin exist. Functions run in descriptor order (class name, then function name). For each function
 the processor:
 
-1. picks the receiver by `MemberOwner` (`engine.descriptor.receiverOf`, shared with the value
-   processor): the plugin instance from the context, the `INSTANCE` of a Kotlin `object`, or
+1. picks the receiver by `MemberOwner` (`context.receiverOf`, a VersatiaAPI helper shared with the
+   value processor and custom processors): the plugin instance from the context, the `INSTANCE` of a Kotlin `object`, or
    (`MemberOwner.INSTANCE`) the bean of that class from the plugin's bean session;
-2. resolves the parameters through the bean session with the same rules as constructor
+2. resolves the parameters through the bean session (`context.inject`) with the same rules as constructor
    dependencies (local beans first, then exposed beans; one prototype instance per plugin);
 3. calls the `Invoker`. Any exception, and a `LinkageError` such as a `NoSuchMethodError`, is
    wrapped in an `EnhancementException` naming the function and the event, with the original as
@@ -415,7 +456,7 @@ kept in the plugin state.
 - `VersatiaRuntimeTest` drives the runtime over a hand-written descriptor in the `sample` test
   package: the registry and its start order, `@FriendlyName`, the duplicate-name error, the reload
   event and the stop event, a failed or self-cancelled start followed by a disable, a
-  self-cancelled reload, the reload guards, the cascade through a cycle, a consumer of a bean that
+  self-cancelled reload, the reload guards, the main-thread guard of start, reload and stop, the cascade through a cycle, a consumer of a bean that
   does not follow reloads left alone, and a consumer failing after its owner reloaded.
   `PluginStatesTest` covers the best-effort close of every store.
 - `BeanLoadingTest` drives `PluginEnhancer` with hand-written descriptors: creation order,
@@ -444,7 +485,9 @@ kept in the plugin state.
   every instance tracks in its own cell, the cascade runs the consumers' reload functions in start
   order, reaches a consumer holding only a singleton that wraps the prototype, skips a consumer
   holding only a bean without values, a broken provider file changes
-  and cascades nothing, and a disabled consumer's instance is forgotten.
+  and cascades nothing, and a disabled consumer's instance is forgotten. Over the same plugins it
+  checks that debug mode writes nothing while off, logs each step (never a value) while on, and
+  that `PluginInfo` reports the format, beans, consumers, cascade and `@Value` files.
 - `ExtractResourcesTest` and `RegisterListenersTest` cover the two per-plugin features;
   `InstantiatorTest` covers the reflective instantiators of the descriptor.
 - `DescriptorLoaderTest` and `DescriptorCompatibilityTest` cover lookup by main class and the

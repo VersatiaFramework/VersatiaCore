@@ -1,17 +1,19 @@
 package com.github.marcoral.versatia.config
 
 import com.github.marcoral.versatia.EnhancementContext
-import com.github.marcoral.versatia.EnhancementException
 import com.github.marcoral.versatia.EnhancementProcessor
 import com.github.marcoral.versatia.LifecycleEvent
 import com.github.marcoral.versatia.StateKey
 import com.github.marcoral.versatia.classLoader
+import com.github.marcoral.versatia.debug
+import com.github.marcoral.versatia.failure
+import com.github.marcoral.versatia.receiverOf
+import com.github.marcoral.versatia.targetAs
 import com.github.marcoral.versatia.di.BeanResolver
 import com.github.marcoral.versatia.di.ExposedBeanRegistry
 import com.github.marcoral.versatia.engine.descriptor.EnhancedElement
 import com.github.marcoral.versatia.engine.descriptor.MemberOwner
 import com.github.marcoral.versatia.engine.descriptor.PropertyTarget
-import com.github.marcoral.versatia.engine.descriptor.receiverOf
 import com.github.marcoral.versatia.resources.ExtractResources
 import com.github.marcoral.versatia.util.config.ConfigurationValueException
 import com.github.marcoral.versatia.util.config.loadYamlOrThrow
@@ -37,8 +39,7 @@ import org.bukkit.configuration.ConfigurationSection
 class ValueEnhancementProcessor : EnhancementProcessor {
     override fun process(elements: List<EnhancedElement>, context: EnhancementContext) {
         val bindings = elements.map { element ->
-            val target = element.target as? PropertyTarget
-                ?: throw EnhancementException("${javaClass.name} can only enhance properties, got ${element.target}")
+            val target = element.targetAs<PropertyTarget>(this)
             val arguments = element.annotation.arguments
             Binding(target, arguments["file"] as String, arguments["key"] as String, (arguments["mapper"] as? String)?.takeIf { it != NO_MAPPER })
         }
@@ -47,17 +48,17 @@ class ValueEnhancementProcessor : EnhancementProcessor {
         val values = bindings.map { it to read(it, reader, files.getValue(it.file), context) }
         val (beanValues, otherValues) = values.partition { (binding, _) -> binding.target.owner == MemberOwner.INSTANCE }
         val starting = context.event == LifecycleEvent.START
-        val assignments = otherValues.map { (binding, value) -> Assignment(binding, receiverOf(binding, context), value) } +
+        val assignments = otherValues.map { (binding, value) -> Assignment(binding, context.receiverOf(binding.target), value) } +
             if (starting) emptyList() else beanValues.flatMap { (binding, value) -> instancesOf(binding, context).map { Assignment(binding, it, value) } }
         val current = context.state.getOrPut(CURRENT) { HashMap() }
         values.forEach { (binding, value) -> current[binding.description] = value }
         assignments.forEach { assign(it.binding, it.receiver, it.value, context) }
         if (starting) prepare(beanValues.map { it.first }, current, context)
-        context.plugin.logger.fine { "Set ${values.size} values from ${files.keys.joinToString()}" }
+        context.debug { "set ${values.size} values, ${bindings.groupBy({ it.file }, { it.key }).entries.joinToString("; ") { (file, keys) -> "$file: ${keys.joinToString()}" }}" }
     }
 
     private class Binding(val target: PropertyTarget, val file: String, val key: String, val mapper: String?) {
-        val description get() = "${target.className}.${target.propertyName}"
+        val description get() = target.description
     }
 
     private class Assignment(val binding: Binding, val receiver: Any, val value: Any?)
@@ -66,12 +67,12 @@ class ValueEnhancementProcessor : EnhancementProcessor {
         val dataFolder = context.plugin.dataFolder.toPath().toAbsolutePath().normalize()
         val path = dataFolder.resolve(file).normalize().toFile()
         if (!path.toPath().startsWith(dataFolder) || path.toPath() == dataFolder)
-            throw failure(context, "the @Value file \"$file\" lies outside the data folder; name a path relative to it, such as config.yml")
-        if (!path.isFile) missingFileMessage(file, context).let { throw failure(context, it, ConfigurationValueException(it)) }
+            throw context.failure("the @Value file \"$file\" lies outside the data folder; name a path relative to it, such as config.yml")
+        if (!path.isFile) missingFileMessage(file, context).let { throw context.failure(it, ConfigurationValueException(it)) }
         return try {
             loadYamlOrThrow(path)
         } catch (e: Exception) {
-            throw failure(context, "$file could not be read", e)
+            throw context.failure("$file could not be read", e)
         }
     }
 
@@ -87,9 +88,9 @@ class ValueEnhancementProcessor : EnhancementProcessor {
     private fun read(binding: Binding, reader: ValueReader, file: ConfigurationSection, context: EnhancementContext) = try {
         reader.read(file, binding.key, binding.target.type, binding.mapper)
     } catch (e: Exception) {
-        throw failure(context, "${binding.description} could not be read from ${binding.file}: ${reasonOf(e)}", e)
+        throw context.failure("${binding.description} could not be read from ${binding.file}: ${reasonOf(e)}", e)
     } catch (e: LinkageError) {
-        throw failure(context, "${binding.description} could not be read from ${binding.file}: ${reasonOf(e)}", e)
+        throw context.failure("${binding.description} could not be read from ${binding.file}: ${reasonOf(e)}", e)
     }
 
     /**
@@ -113,27 +114,21 @@ class ValueEnhancementProcessor : EnhancementProcessor {
         }
     }
 
-    private fun receiverOf(binding: Binding, context: EnhancementContext) =
-        context.receiverOf(binding.target.owner, binding.target.className, binding.target.binaryClassName, "set ${binding.description} on")
-
     private fun instancesOf(binding: Binding, context: EnhancementContext) =
         context.state[BeanResolver.KEY]?.instancesOf(binding.target.className).orEmpty()
             .ifEmpty { throw noBean(binding, context) }
 
-    private fun noBean(binding: Binding, context: EnhancementContext) = failure(context, "no bean ${binding.target.className} exists to set ${binding.description} on")
+    private fun noBean(binding: Binding, context: EnhancementContext) = context.failure("no bean ${binding.target.className} exists to set ${binding.description} on")
 
     private fun assign(binding: Binding, instance: Any, value: Any?, context: EnhancementContext) {
         try {
             binding.target.setter.set(context.classLoader, instance, value)
         } catch (e: Exception) {
-            throw failure(context, "${binding.description} could not be set: ${reasonOf(e)}", e)
+            throw context.failure("${binding.description} could not be set: ${reasonOf(e)}", e)
         } catch (e: LinkageError) {
-            throw failure(context, "${binding.description} could not be set: ${reasonOf(e)}", e)
+            throw context.failure("${binding.description} could not be set: ${reasonOf(e)}", e)
         }
     }
-
-    private fun failure(context: EnhancementContext, message: String, cause: Throwable? = null) =
-        EnhancementException("Plugin ${context.plugin.name}: $message", cause)
 
     private fun reasonOf(e: Throwable) = e.message ?: e.javaClass.name
 

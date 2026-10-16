@@ -14,19 +14,26 @@ import org.bukkit.plugin.Plugin
  * which is how a reload addresses them; a plugin counts as running once registered, which happens
  * only when its start completed. Nothing in here knows any particular feature, except that a reload
  * follows the exposed-bean registry to the plugins holding beans of the reloaded one that follow
- * its reloads (those with `@Value` properties); see
- * docs/runtime.md.
+ * its reloads (those with `@Value` properties). Starting, reloading and disabling touch Bukkit
+ * state, so each refuses to run off the server's main thread; with a [debugLog] every step is
+ * described in the log while debug mode is on. See docs/runtime.md.
  */
 class VersatiaRuntime(
     private val states: PluginStates = PluginStates(),
     private val enhancer: PluginEnhancer = PluginEnhancer(ProcessorLoader()),
+    debugLog: DebugLog? = null,
 ) : VersatiaEngine, AutoCloseable {
     override val registry = EnhancedPlugins()
     private val starting = HashMap<Plugin, DefaultEnhancementContext>()
     private val reloading = HashMap<Plugin, DefaultEnhancementContext>()
     private var cascade: Cascade? = null
 
+    init {
+        debugLog?.let { states.runtime.getOrPut(DebugLog.KEY) { it } }
+    }
+
     override fun enhance(plugin: Plugin) {
+        checkMainThread(plugin, "start")
         if (plugin in starting || registry.friendlyNameOf(plugin) != null) throw EnhancementException("Plugin ${plugin.name} is already running")
         val store = states.of(plugin.name)
         val context = DefaultEnhancementContext(plugin, LifecycleEvent.START, store, states.runtime)
@@ -39,6 +46,7 @@ class VersatiaRuntime(
 
     /** Reloads [plugin] and the plugins using its beans; a failure of [plugin] is thrown, one of the others logged. */
     override fun reload(plugin: Plugin) {
+        checkMainThread(plugin, "reload")
         val outcomes = reload(listOf(plugin))
         outcomes.first { it.plugin === plugin }.failure?.let { throw it }
         val cascaded = outcomes.filter { it.cause != null }
@@ -50,10 +58,12 @@ class VersatiaRuntime(
      * Reloads [requested] and then every running plugin holding a bean exposed by a plugin that
      * reloaded, of a class marked to follow its owner's reloads (one with `@Value` properties),
      * transitively, each once and in start order; a plugin whose reload failed passes
-     * nothing on. Failures are part of the outcomes, never thrown. Called while a reload runs, as
-     * from a reload function, it joins that reload: a plugin it already went through is refused.
+     * nothing on. Failures are part of the outcomes, never thrown, except a call off the main
+     * thread, which reloads nothing. Called while a reload runs, as from a reload function, it
+     * joins that reload: a plugin it already went through is refused.
      */
     fun reload(requested: Collection<Plugin>): List<ReloadOutcome> {
+        requested.forEach { checkMainThread(it, "reload") }
         cascade?.let { running -> return requested.map { running.run(it, null) } }
         val running = Cascade().also { cascade = it }
         try {
@@ -86,7 +96,10 @@ class VersatiaRuntime(
             }
             val outcome = ReloadOutcome(name, plugin, cause?.let(::nameOf), failure)
             outcomes[plugin] = outcome
-            if (failure == null) consumersOf(plugin).forEach { if (it !in outcomes) pending.putIfAbsent(it, plugin) }
+            if (failure == null) consumersOf(plugin).let { consumers ->
+                debug(plugin) { if (consumers.isEmpty()) "no running plugin holds a bean that follows its reloads" else "goes on to ${consumers.joinToString { nameOf(it) }}, holding beans that follow its reloads" }
+                consumers.forEach { if (it !in outcomes) pending.putIfAbsent(it, plugin) }
+            }
             return outcome
         }
     }
@@ -133,6 +146,7 @@ class VersatiaRuntime(
      * A start or reload under way is cancelled: nothing more of it runs once the plugin is disabled.
      */
     override fun disable(plugin: Plugin) {
+        checkMainThread(plugin, "stop")
         starting.remove(plugin)?.cancel()
         reloading.remove(plugin)?.cancel()
         if (registry.friendlyNameOf(plugin) == null) return states.drop(plugin.name)
@@ -148,6 +162,19 @@ class VersatiaRuntime(
     }
 
     override fun close() = states.close()
+
+    /** The state kept for [plugin] while it runs, read by diagnostics such as `/versatia info`; null when it is not running. */
+    fun stateOf(plugin: Plugin): StateStore? = if (registry.friendlyNameOf(plugin) != null) states.of(plugin.name) else null
+
+    /** The state shared by all plugins, such as the exposed-bean registry. */
+    val runtimeState: StateStore get() = states.runtime
+
+    private fun debug(plugin: Plugin, message: () -> String) = states.runtime[DebugLog.KEY]?.log(plugin, LifecycleEvent.RELOAD, message)
+
+    private fun checkMainThread(plugin: Plugin, action: String) {
+        if (!plugin.server.isPrimaryThread)
+            throw EnhancementException("Plugin ${plugin.name}: $action must run on the server's main thread; schedule it with plugin.runTask { ... }")
+    }
 
     private fun run(plugin: Plugin, event: LifecycleEvent) {
         val context = DefaultEnhancementContext(plugin, event, states.of(plugin.name), states.runtime)

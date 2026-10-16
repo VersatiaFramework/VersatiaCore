@@ -18,7 +18,8 @@ import org.bukkit.command.CommandSender
 import org.bukkit.plugin.Plugin
 
 /**
- * `/versatia reload [plugin]`: runs the reload-phase enhancements of every enhanced plugin, or of
+ * `/versatia info [plugin]`: lists the running Versatia plugins, or shows what the runtime keeps for
+ * one of them; see [PluginInfo]. `/versatia reload [plugin]`: runs the reload-phase enhancements of every enhanced plugin, or of
  * the one with the given friendly name and then of the plugins using its beans; the reply and the
  * log name every plugin reloaded and every failure. Registered only while the CommandAPI plugin is on the
  * server; without it the object is never loaded. A CommandAPI that fails to take the command, such
@@ -28,6 +29,7 @@ import org.bukkit.plugin.Plugin
 object VersatiaCommand {
     const val NAME = "versatia"
     const val RELOAD_PERMISSION = "versatia.core.command.reload"
+    const val INFO_PERMISSION = "versatia.core.command.info"
 
     private var registered = false
 
@@ -38,6 +40,11 @@ object VersatiaCommand {
                 withPermission(RELOAD_PERMISSION)
                 stringArgument("plugin", optional = true) { replaceSuggestions(ArgumentSuggestions.stringCollection { core.runtime.registry.friendlyNames }) }
                 anyExecutor { sender, args -> reload(core, sender, args["plugin"] as? String) }
+            }
+            subcommand("info") {
+                withPermission(INFO_PERMISSION)
+                stringArgument("plugin", optional = true) { replaceSuggestions(ArgumentSuggestions.stringCollection { core.runtime.registry.friendlyNames }) }
+                anyExecutor { sender, args -> info(core, sender, args["plugin"] as? String) }
             }
         }
         registered = true
@@ -74,7 +81,7 @@ object VersatiaCommand {
         val selected = when (name) {
             null -> plugins
             in plugins -> mapOf(name to plugins.getValue(name))
-            else -> return sender.sendMessage(text("No Versatia plugin is called \"$name\". ${running(plugins)}", NamedTextColor.RED))
+            else -> return unknown(sender, name, plugins)
         }
         if (selected.isEmpty()) return sender.sendMessage(text(running(plugins), NamedTextColor.YELLOW))
         val outcomes = core.runtime.reload(selected.values)
@@ -88,6 +95,20 @@ object VersatiaCommand {
             sender.sendMessage(text(summary, NamedTextColor.GREEN))
         }
     }
+
+    private fun info(core: VersatiaCore, sender: CommandSender, name: String?) {
+        val plugins = core.runtime.registry.plugins
+        val info = PluginInfo(core.runtime)
+        val lines = when (name) {
+            null -> info.overview().ifEmpty { listOf(running(plugins)) }
+            in plugins -> info.details(plugins.getValue(name))
+            else -> return unknown(sender, name, plugins)
+        }
+        sender.sendMessage(text(lines.joinToString("\n")))
+    }
+
+    private fun unknown(sender: CommandSender, name: String, plugins: Map<String, Plugin>) =
+        sender.sendMessage(text("No Versatia plugin is called \"$name\". ${running(plugins)}", NamedTextColor.RED))
 
     private fun running(plugins: Map<String, Plugin>) =
         if (plugins.isEmpty()) "No Versatia plugin is running." else "Running: ${plugins.keys.joinToString()}."

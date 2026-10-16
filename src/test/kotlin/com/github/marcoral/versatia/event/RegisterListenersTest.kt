@@ -110,7 +110,7 @@ class RegisterListenersTest {
     fun `rejects a listener with parameters when the plugin has no beans`() {
         val failure = assertFailsWith<EnhancementException> { enhancer.enhance(descriptor(listener(chat)), context()) }
 
-        assertContains(failure.message!!, "needs injected constructor parameters, but the plugin has no beans")
+        assertContains(failure.message!!, "needs injected parameters, but the plugin has no beans")
     }
 
     @Test

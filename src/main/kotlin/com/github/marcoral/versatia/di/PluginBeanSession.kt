@@ -4,6 +4,7 @@ import com.github.marcoral.versatia.EnhancementContext
 import com.github.marcoral.versatia.EnhancementException
 import com.github.marcoral.versatia.LifecycleEvent
 import com.github.marcoral.versatia.classLoader
+import com.github.marcoral.versatia.debug
 import com.github.marcoral.versatia.engine.descriptor.DefaultArgument
 import com.github.marcoral.versatia.engine.descriptor.Parameter
 import org.bukkit.plugin.Plugin
@@ -42,11 +43,16 @@ class PluginBeanSession(
             instantiationScheduled = true
             context.onPluginEnhanced {
                 val instances = instantiateAll()
-                context.plugin.logger.fine { "Created ${instances.size} beans: ${instances.values.joinToString { it.javaClass.name }}" }
+                context.debug { "created ${instances.size} beans: ${instances.keys.joinToString()}" }
+                val exposedBeans = instances.keys.filter { it.scope != BeanScope.LOCAL }
+                if (exposedBeans.isNotEmpty()) context.debug { "exposes ${exposedBeans.joinToString { "$it as ${it.scope.label}" }}" }
                 reload()
             }
         }
     }
+
+    /** The beans created for the plugin, in creation order; empty before they exist. */
+    val beans: List<BeanDefinition> get() = created?.keys?.toList().orEmpty()
 
     /** Reloads every [Reloadable] of the session in creation order: the plugin's own beans and the prototype instances made for it. */
     fun reload() {

@@ -171,6 +171,13 @@ class PluginEnhancerTest {
 
     @Test
     fun `logs each missing plugin once, telling one not installed from one not enabled yet`() {
+        // A function conditional on its own, in a class without the condition, is named as the function
+        val ownCondition = EnhancedElement(
+            LifecycleProcessors.AUTO_INVOKE,
+            Phase.PLUGIN_START_ONLY,
+            AnnotationOccurrence(AutoInvoke::class.java.name, mapOf("phase" to Phase.PLUGIN_START_ONLY.name)),
+            FunctionTarget(Beacon::class.qualifiedName!!, Beacon::class.qualifiedName!!, "always", MemberOwner.OBJECT, listOf(conditional("Vault")), emptyList(), Invoker.Direct { _, _ -> Beacon.always() }, emptyList()),
+        )
         val logged = mutableListOf<String>()
         val handler = object : Handler() {
             override fun publish(record: LogRecord) {
@@ -184,14 +191,14 @@ class PluginEnhancerTest {
         val plugin = fakePlugin("Alpha", installedPlugins = setOf("Vault"))
         plugin.logger.addHandler(handler)
         try {
-            enhancer.enhance(descriptor(pluginBean, bridge, connect, hook, always), testContext("Alpha", PluginStates(), plugin = plugin))
+            enhancer.enhance(descriptor(pluginBean, bridge, connect, hook, always, ownCondition), testContext("Alpha", PluginStates(), plugin = plugin))
         } finally {
             plugin.logger.removeHandler(handler)
         }
 
         assertEquals(
             listOf(
-                "Skipped Bridge, Hooks: Vault is installed but was not enabled before Alpha; list it under softdepend: in plugin.yml",
+                "Skipped Bridge, Hooks, Beacon.always(): Vault is installed but was not enabled before Alpha; list it under softdepend: in plugin.yml",
                 "Skipped Hooks: CommandAPI is not installed",
             ),
             logged,

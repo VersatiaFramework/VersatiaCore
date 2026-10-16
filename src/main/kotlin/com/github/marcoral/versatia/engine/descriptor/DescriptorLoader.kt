@@ -4,6 +4,7 @@ import com.github.marcoral.versatia.EnhancementContext
 import com.github.marcoral.versatia.EnhancementException
 import com.github.marcoral.versatia.classLoader
 import com.github.marcoral.versatia.util.reflect.objectInstanceOrNull
+import org.bukkit.plugin.Plugin
 
 /**
  * Finds the generated descriptor by name; nothing is scanned. The descriptor must come from the
@@ -12,15 +13,19 @@ import com.github.marcoral.versatia.util.reflect.objectInstanceOrNull
 object DescriptorLoader {
     val supportedFormat get() = VersatiaPluginDescriptor.FORMAT_VERSION
 
-    fun load(pluginMainClass: String, context: EnhancementContext): VersatiaPluginDescriptor {
+    fun load(pluginMainClass: String, context: EnhancementContext) = load(pluginMainClass, context.plugin.name, context.classLoader)
+
+    /** The descriptor of a plugin that has started, read again for diagnostics such as `/versatia info`. */
+    fun load(plugin: Plugin) = load(plugin.pluginMeta.mainClass, plugin.name, plugin.javaClass.classLoader)
+
+    private fun load(pluginMainClass: String, plugin: String, classLoader: ClassLoader): VersatiaPluginDescriptor {
         val name = VersatiaPluginDescriptor.classNameFor(pluginMainClass)
-        val plugin = context.plugin.name
         val clazz = try {
-            Class.forName(name, false, context.classLoader)
+            Class.forName(name, false, classLoader)
         } catch (e: ClassNotFoundException) {
             throw EnhancementException("Plugin $plugin: descriptor $name not found. Is the VersatiaAPI KSP processor applied to the plugin build?", e)
         }
-        if (clazz.classLoader !== context.classLoader)
+        if (clazz.classLoader !== classLoader)
             throw EnhancementException("Plugin $plugin: descriptor $name comes from ${clazz.classLoader}, not from the plugin itself; is the plugin built with the VersatiaAPI KSP processor and its main class in a package of its own?")
         val instance = try {
             clazz.objectInstanceOrNull()

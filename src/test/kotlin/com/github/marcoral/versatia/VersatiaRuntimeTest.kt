@@ -217,6 +217,27 @@ class VersatiaRuntimeTest {
     }
 
     @Test
+    fun `refuses to start, reload or stop a plugin off the main thread`() {
+        var mainThread = false
+        val ticker = fakePlugin("TickerPlugin", main = tickerMain, primaryThread = { mainThread })
+        fun message(action: String) = "Plugin TickerPlugin: $action must run on the server's main thread; schedule it with plugin.runTask { ... }"
+
+        assertEquals(message("start"), assertFailsWith<EnhancementException> { runtime.enhance(ticker) }.message)
+        assertNull(runtime.registry.friendlyNameOf(ticker))
+        mainThread = true
+        runtime.enhance(ticker)
+        mainThread = false
+        assertEquals(message("reload"), assertFailsWith<EnhancementException> { runtime.reload(ticker) }.message)
+        assertEquals(message("reload"), assertFailsWith<EnhancementException> { runtime.reload(listOf(ticker)) }.message)
+        assertEquals(message("stop"), assertFailsWith<EnhancementException> { runtime.disable(ticker) }.message)
+        assertEquals(listOf("Ticker.start", "Ticker.tick"), Recorder.names(), "nothing ran off the main thread")
+
+        mainThread = true
+        runtime.disable(ticker)
+        assertEquals("Ticker.stop", Recorder.names().last())
+    }
+
+    @Test
     fun `refuses a reload from inside the plugin's start or reload`() {
 
         val ticker = fakePlugin("TickerPlugin", main = tickerMain)

@@ -4,32 +4,29 @@ import org.jetbrains.kotlin.gradle.plugin.getKotlinPluginVersion
 import java.util.Properties
 
 plugins {
-    kotlin("jvm") version "2.4.20"
-    id("com.google.devtools.ksp") version "2.3.12"
+    alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.ksp)
 }
 
 group = "com.github.marcoral.versatia"
-version = "0.0.1"
-
-val versatiaVersion = "0.0.1"
-val commandApiVersion = "12.1.0"
+version = providers.gradleProperty("versatiaVersion").get()
 
 // Paper API and the Kotlin standard library are inherited from VersatiaAPI; see docs/build.md
 dependencies {
-    implementation("com.github.marcoral.versatia:VersatiaAPI:$versatiaVersion")
+    implementation(libs.versatia.api)
     // VersatiaCore enhances itself, so its descriptor is generated like a plugin's; see docs/build.md
-    ksp("com.github.marcoral.versatia:VersatiaAPI-ksp:$versatiaVersion")
+    ksp(libs.versatia.ksp)
     // The CommandAPI plugin is a soft dependency on the server; only its Kotlin DSL ships in this JAR
-    compileOnly("dev.jorel:commandapi-paper-core:$commandApiVersion")
-    implementation("dev.jorel:commandapi-kotlin-paper:$commandApiVersion")
+    compileOnly(libs.commandapi.paper.core)
+    implementation(libs.commandapi.kotlin.paper)
 
     testImplementation(kotlin("test"))
     // Compiles sample plugins with the real KSP processor inside tests; see docs/runtime.md
-    testImplementation("com.github.marcoral.versatia:VersatiaAPI-ksp:$versatiaVersion")
-    testImplementation("dev.zacsweers.kctfork:ksp:0.14.0")
+    testImplementation(libs.versatia.ksp)
+    testImplementation(libs.kctfork.ksp)
     // Tests fake a Bukkit Plugin, so the API must be on the test runtime classpath
-    testImplementation("io.papermc.paper:paper-api:1.21.4-R0.1-SNAPSHOT")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    testImplementation(libs.paper.api)
+    testRuntimeOnly(libs.junit.platform.launcher)
 }
 
 // Paper 1.21.4 requires Java 21
