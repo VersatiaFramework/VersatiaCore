@@ -27,6 +27,7 @@ Desktop.ini
 # JVM logs and crash dumps
 *.log
 hs_err_pid*
+*.hprof
 replay_pid*
 
 # Machine-specific settings (template: local.properties.example)

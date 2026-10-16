@@ -3,20 +3,26 @@ package com.github.marcoral.versatia.config
 import com.github.marcoral.versatia.EnhancementException
 import com.github.marcoral.versatia.engine.descriptor.TypeReference
 import com.github.marcoral.versatia.util.config.ConfigurationValueException
+import com.github.marcoral.versatia.util.config.getBooleanListOrThrow
 import com.github.marcoral.versatia.util.config.getBooleanOrThrow
 import com.github.marcoral.versatia.util.config.getColorOrThrow
 import com.github.marcoral.versatia.util.config.getConfigurationSectionOrThrow
+import com.github.marcoral.versatia.util.config.getDoubleListOrThrow
 import com.github.marcoral.versatia.util.config.getDoubleOrThrow
 import com.github.marcoral.versatia.util.config.getEnumElementList
 import com.github.marcoral.versatia.util.config.getEnumElementOrThrow
+import com.github.marcoral.versatia.util.config.getFloatListOrThrow
 import com.github.marcoral.versatia.util.config.getFloatOrThrow
+import com.github.marcoral.versatia.util.config.getIntListOrThrow
 import com.github.marcoral.versatia.util.config.getIntOrThrow
 import com.github.marcoral.versatia.util.config.getItemStackOrThrow
 import com.github.marcoral.versatia.util.config.getLocationOrThrow
+import com.github.marcoral.versatia.util.config.getLongListOrThrow
 import com.github.marcoral.versatia.util.config.getLongOrThrow
 import com.github.marcoral.versatia.util.config.getOfflinePlayerOrThrow
 import com.github.marcoral.versatia.util.config.getPercentList
 import com.github.marcoral.versatia.util.config.getPercentOrThrow
+import com.github.marcoral.versatia.util.config.getStringListOrThrow
 import com.github.marcoral.versatia.util.config.getStringOrThrow
 import com.github.marcoral.versatia.util.config.getUIntList
 import com.github.marcoral.versatia.util.config.getUIntOrThrow
@@ -24,7 +30,7 @@ import com.github.marcoral.versatia.util.config.getULongList
 import com.github.marcoral.versatia.util.config.getULongOrThrow
 import com.github.marcoral.versatia.util.config.getVectorOrThrow
 import com.github.marcoral.versatia.util.config.pathOf
-import com.github.marcoral.versatia.util.reflect.forceGetObjectInstance
+import com.github.marcoral.versatia.util.reflect.objectOrNewInstance
 import com.github.marcoral.versatia.util.type.Percent
 import org.bukkit.Color
 import org.bukkit.Location
@@ -73,8 +79,7 @@ internal class ValueReader(private val classLoader: ClassLoader) {
 
     /** The mapper's `object` instance, or a new instance from its no-argument constructor. */
     private fun mapperInstance(name: String): ValueMapper<*> {
-        val clazz = loadClass(name)
-        val instance = clazz.kotlin.forceGetObjectInstance() ?: clazz.getDeclaredConstructor().apply { isAccessible = true }.newInstance()
+        val instance = loadClass(name).objectOrNewInstance()
         return instance as? ValueMapper<*> ?: throw EnhancementException("$name does not implement ${ValueMapper::class.java.name}")
     }
 
@@ -114,14 +119,14 @@ internal class ValueReader(private val classLoader: ClassLoader) {
         )
 
         val LISTS: Map<String, ConfigurationSection.(String) -> List<Any>> = mapOf(
-            Boolean::class.qualifiedName!! to { getBooleanList(it) },
-            Int::class.qualifiedName!! to { getIntegerList(it) },
-            Long::class.qualifiedName!! to { getLongList(it) },
-            Float::class.qualifiedName!! to { getFloatList(it) },
-            Double::class.qualifiedName!! to { getDoubleList(it) },
+            Boolean::class.qualifiedName!! to { getBooleanListOrThrow(it) },
+            Int::class.qualifiedName!! to { getIntListOrThrow(it) },
+            Long::class.qualifiedName!! to { getLongListOrThrow(it) },
+            Float::class.qualifiedName!! to { getFloatListOrThrow(it) },
+            Double::class.qualifiedName!! to { getDoubleListOrThrow(it) },
             UInt::class.qualifiedName!! to { getUIntList(it) },
             ULong::class.qualifiedName!! to { getULongList(it) },
-            String::class.qualifiedName!! to { getStringList(it) },
+            String::class.qualifiedName!! to { getStringListOrThrow(it) },
             Percent::class.qualifiedName!! to { getPercentList(it) },
         )
     }

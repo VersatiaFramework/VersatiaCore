@@ -25,7 +25,7 @@ declared phase with their parameters injected from those beans; the files a plug
 `resources/` are extracted into its data folder when it starts, and its Bukkit listeners are
 registered. With the [CommandAPI](https://commandapi.dev/) plugin installed, `/versatia reload`
 runs the reload phase of every Versatia plugin, or of one addressed by its `@FriendlyName`;
-elements marked `@ConditionalOnPlugin` are skipped while the plugins they need are absent.
+elements marked `@ConditionalOnPlugin` are skipped for the plugin's lifetime when the plugins they need were absent at its start.
 
 ## Requirements
 

@@ -1,6 +1,8 @@
 package com.github.marcoral.versatia.di
 
+import com.github.marcoral.versatia.EnhancementContext
 import com.github.marcoral.versatia.EnhancementException
+import com.github.marcoral.versatia.EnhancementProcessor
 import com.github.marcoral.versatia.EventType
 import com.github.marcoral.versatia.LifecycleEvent
 import com.github.marcoral.versatia.PluginEnhancer
@@ -139,6 +141,44 @@ class Pass(val ticket: Ticket) {
 }
 
 class Traveller(val ticket: Ticket, val wallet: Wallet, val pass: Pass)
+
+class Pool(val plugin: Plugin) : AutoCloseable {
+    override fun close() = Recorder.record("Pool.close for ${plugin.name}", this)
+}
+
+class Repository(val pool: Pool) : AutoCloseable {
+    override fun close() = Recorder.record("Repository.close", this)
+}
+
+class Leaky : AutoCloseable {
+    override fun close() = throw IllegalStateException("socket stuck")
+}
+
+class Registry : AutoCloseable {
+    override fun close() = Recorder.record("Registry.close", this)
+}
+
+class Lookup(val registry: Registry)
+
+object SilentGreeter : Greeter
+
+class Booth(val greeter: Greeter = SilentGreeter, val clock: Clock = Clock()) {
+    init {
+        Recorder.record("Booth", this)
+    }
+}
+
+class Sign(val text: String, val clock: Clock) {
+    init {
+        Recorder.record("Sign", this)
+    }
+}
+
+/** Supplies the text of every [Sign], as the `@Value` processor supplies constructor properties. */
+class SignTextSupplier : EnhancementProcessor {
+    override fun process(elements: List<EnhancedElement>, context: EnhancementContext) =
+        context.state[BeanResolver.KEY]!!.supply(Sign::class.qualifiedName!!, 0, "Open at ${context.event}")
+}
 
 /** Unit tests of the runtime half of dependency injection with hand-written descriptors. */
 class BeanLoadingTest {
@@ -554,5 +594,117 @@ class BeanLoadingTest {
         enhancer.enhance(descriptor(mainClass, count), context("Beta", LifecycleEvent.RELOAD))
 
         assertEquals(listOf("Bank.reload for Beta", "Counter.count"), Recorder.names(), "the instance made for Beta loads before the function receives it")
+    }
+
+    private val pool = element<Pool>(BeanProcessors.EXPOSE_PROTOTYPE, dependencies = listOf(Plugin::class.qualifiedName!!), instantiator = Instantiator.Direct { Pool(it[0] as Plugin) })
+    private val repository = element<Repository>(BeanProcessors.LOCAL, dependencies = listOf(Pool::class.qualifiedName!!), instantiator = Instantiator.Direct { Repository(it[0] as Pool) })
+
+    @Test
+    fun `AutoCloseable beans and prototype instances close with their plugin, dependents first`() {
+        enhancer.enhance(descriptor(mainClass, pool), context("Alpha"))
+        enhancer.enhance(descriptor(mainClass, repository), context("Beta"))
+        Recorder.reset()
+
+        states.drop("Beta")
+
+        assertEquals(listOf("Repository.close", "Pool.close for Beta"), Recorder.names(), "the repository goes before the pool it uses")
+
+        Recorder.reset()
+        states.drop("Alpha")
+        assertEquals(listOf("Pool.close for Alpha"), Recorder.names(), "the owner's own instance closes with the owner")
+    }
+
+    @Test
+    fun `a failing close names the plugin and the bean, and the others still close`() {
+        val leaky = element<Leaky>(BeanProcessors.LOCAL, instantiator = Instantiator.Direct { Leaky() })
+        enhancer.enhance(descriptor(mainClass, pool), context("Alpha"))
+        enhancer.enhance(descriptor(mainClass, repository, leaky), context("Beta"))
+        Recorder.reset()
+
+        val error = assertFailsWith<EnhancementException> { states.drop("Beta") }
+
+        assertEquals("Plugin Beta: ${Leaky::class.qualifiedName} failed to close", error.message)
+        assertEquals("socket stuck", error.cause?.message)
+        assertEquals(listOf("Repository.close", "Pool.close for Beta"), Recorder.names())
+    }
+
+    @Test
+    fun `a bean constructor that disables its plugin stops the creation and nothing stays exposed`() {
+        val quitter = element<Registry>(BeanProcessors.EXPOSE_SINGLETON, instantiator = Instantiator.Direct { states.drop("Alpha"); Registry() })
+
+        enhancer.enhance(descriptor(quitter, exposedClock), context("Alpha"))
+
+        assertEquals(0, states.exposedBeanCount())
+        assertEquals(listOf("Registry.close"), Recorder.names(), "the bean created after the plugin was disabled is closed, and no later bean is created")
+    }
+
+    @Test
+    fun `an exposed singleton closes with its owner, not with the plugins using it`() {
+        val registry = element<Registry>(BeanProcessors.EXPOSE_SINGLETON, instantiator = Instantiator.Direct { Registry() })
+        val lookup = element<Lookup>(BeanProcessors.LOCAL, dependencies = listOf(Registry::class.qualifiedName!!), instantiator = Instantiator.Direct { Lookup(it[0] as Registry) })
+        enhancer.enhance(descriptor(registry), context("Alpha"))
+        enhancer.enhance(descriptor(lookup), context("Beta"))
+
+        states.drop("Beta")
+        assertEquals(emptyList(), Recorder.names().filter { it.endsWith(".close") })
+
+        states.drop("Alpha")
+        assertEquals(listOf("Registry.close"), Recorder.names().filter { it.endsWith(".close") })
+    }
+
+    private val booth = EnhancedElement(
+        processorClass = BeanProcessors.LOCAL,
+        phase = EventType.PLUGIN_START_ONLY,
+        annotation = AnnotationOccurrence("test.Scope"),
+        target = ClassTarget(
+            className = Booth::class.qualifiedName!!,
+            assignableTypes = listOf(Booth::class.qualifiedName!!),
+            annotations = emptyList(),
+            constructorParameters = listOf(Parameter(greeterName, optional = true), Parameter(clockName, optional = true)),
+            instantiator = Instantiator.WithDefaults(Booth::class.java.name, listOf(Greeter::class.java.name, Clock::class.java.name)),
+        ),
+    )
+
+    @Test
+    fun `an optional parameter takes a local or exposed bean when one exists and keeps its default otherwise`() {
+        enhancer.enhance(descriptor(exposedClock), context("Alpha"))
+        enhancer.enhance(descriptor(booth), context("Beta"))
+
+        val made = Recorder.instanceOf("Booth") as Booth
+        assertSame(SilentGreeter, made.greeter)
+        assertSame(Recorder.instanceOf("Clock"), made.clock, "the exposed clock, so the default never ran")
+
+        Recorder.reset()
+        enhancer.enhance(descriptor(booth, greeter, localClock), context("Gamma"))
+        assertSame(Recorder.instanceOf("ConsoleGreeter"), (Recorder.instanceOf("Booth") as Booth).greeter)
+    }
+
+    private val sign = EnhancedElement(
+        processorClass = BeanProcessors.LOCAL,
+        phase = EventType.PLUGIN_START_ONLY,
+        annotation = AnnotationOccurrence("test.Scope"),
+        target = ClassTarget(
+            className = Sign::class.qualifiedName!!,
+            assignableTypes = listOf(Sign::class.qualifiedName!!),
+            annotations = emptyList(),
+            constructorParameters = listOf(Parameter("kotlin.String", suppliedBy = SignTextSupplier::class.java.name), Parameter(clockName)),
+            instantiator = Instantiator.Direct { Sign(it[0] as String, it[1] as Clock) },
+        ),
+    )
+
+    private fun signTextSupplier(phase: EventType) = EnhancedElement(SignTextSupplier::class.java.name, phase, AnnotationOccurrence("test.Supply"), sign.target)
+
+    @Test
+    fun `a supplied parameter takes what its processor supplied before the beans were created`() {
+        enhancer.enhance(descriptor(sign, localClock, signTextSupplier(EventType.PLUGIN_RELOAD_OR_START)), context("Alpha"))
+        val made = Recorder.instanceOf("Sign") as Sign
+        assertEquals("Open at START", made.text)
+        assertSame(Recorder.instanceOf("Clock"), made.clock)
+
+        val late = assertFailsWith<EnhancementException> { enhancer.enhance(descriptor(signTextSupplier(EventType.PLUGIN_RELOAD_OR_START)), context("Alpha", LifecycleEvent.RELOAD)) }
+        assertEquals("Plugin Alpha: the argument of parameter 1 of ${Sign::class.qualifiedName} was supplied after the beans had been created", late.message)
+
+        val missing = assertFailsWith<EnhancementException> { enhancer.enhance(descriptor(sign, localClock), context("Beta")) }
+        assertEquals("Plugin Beta: ${Sign::class.qualifiedName} expects SignTextSupplier to supply parameter 1, which it has not", missing.message)
     }
 }

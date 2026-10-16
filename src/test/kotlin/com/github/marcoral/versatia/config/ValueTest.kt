@@ -257,7 +257,17 @@ class ValueTest {
 
         val missing = value<Limits>("max", MemberOwner.OBJECT, int, Setter.Direct { _, v -> Limits.max = v as Int }, file = "rules/other.yml")
         val error = assertFailsWith<EnhancementException> { enhancer.enhance(descriptor(missing), context()) }
-        assertEquals("Plugin Values: rules/other.yml does not exist in the data folder; ship it under resources/ in the JAR", error.message)
+        assertContains(error.message!!, "Plugin Values: rules/other.yml is missing from the data folder and the plugin JAR has no default copy")
+    }
+
+    @Test
+    fun `rejects a list holding a scalar or an element of the wrong type`() {
+        file("config.yml", "names: world\n")
+        assertFailsWith<EnhancementException> { enhancer.enhance(descriptor(names), context()) }
+
+        file("config.yml", "names:\n  - world\n  - [nested]\n")
+        assertFailsWith<EnhancementException> { enhancer.enhance(descriptor(names), context()) }
+        assertEquals(emptyList(), Limits.names)
     }
 
     @Test

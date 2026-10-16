@@ -11,29 +11,21 @@ plugins {
 group = "com.github.marcoral.versatia"
 version = "0.0.1"
 
-val apiVersion = "0.0.1"
+val versatiaVersion = "0.0.1"
 val commandApiVersion = "12.1.0"
-
-repositories {
-    // VersatiaAPI is consumed from the local Maven repository (`./gradlew publishToMavenLocal` there)
-    mavenLocal()
-    mavenCentral()
-    // Needed to resolve the Paper API that VersatiaAPI exports
-    maven("https://repo.papermc.io/repository/maven-public/")
-}
 
 // Paper API and the Kotlin standard library are inherited from VersatiaAPI; see docs/build.md
 dependencies {
-    implementation("com.github.marcoral.versatia:VersatiaAPI:$apiVersion")
+    implementation("com.github.marcoral.versatia:VersatiaAPI:$versatiaVersion")
     // VersatiaCore enhances itself, so its descriptor is generated like a plugin's; see docs/build.md
-    ksp("com.github.marcoral.versatia:VersatiaAPI-ksp:$apiVersion")
+    ksp("com.github.marcoral.versatia:VersatiaAPI-ksp:$versatiaVersion")
     // The CommandAPI plugin is a soft dependency on the server; only its Kotlin DSL ships in this JAR
     compileOnly("dev.jorel:commandapi-paper-core:$commandApiVersion")
     implementation("dev.jorel:commandapi-kotlin-paper:$commandApiVersion")
 
     testImplementation(kotlin("test"))
     // Compiles sample plugins with the real KSP processor inside tests; see docs/runtime.md
-    testImplementation("com.github.marcoral.versatia:VersatiaAPI-ksp:$apiVersion")
+    testImplementation("com.github.marcoral.versatia:VersatiaAPI-ksp:$versatiaVersion")
     testImplementation("dev.zacsweers.kctfork:ksp:0.14.0")
     // Tests fake a Bukkit Plugin, so the API must be on the test runtime classpath
     testImplementation("io.papermc.paper:paper-api:1.21.4-R0.1-SNAPSHOT")
@@ -48,7 +40,7 @@ java {
 
 kotlin {
     compilerOptions {
-        jvmTarget.set(JvmTarget.JVM_21)
+        jvmTarget = JvmTarget.JVM_21
     }
 }
 
@@ -81,7 +73,7 @@ tasks.jar {
 }
 
 // Machine-specific settings; see docs/build.md
-val localProperties: Provider<Properties> = providers
+val localProperties = providers
     .fileContents(layout.projectDirectory.file("local.properties"))
     .asText
     .map { text -> Properties().apply { load(text.reader()) } }
@@ -89,7 +81,7 @@ val localProperties: Provider<Properties> = providers
 val pluginsDir: Provider<String> = providers.gradleProperty("pluginsDir")
     .orElse(localProperties.map { it.getProperty("pluginsDir") })
 
-tasks.register<Copy>("deployPlugin") {
+val deployPlugin = tasks.register<Copy>("deployPlugin") {
     group = "versatia"
     description = "Copies the plugin JAR to the server plugins/ directory (pluginsDir from local.properties)."
     // Local copy: the onlyIf lambda must not capture script fields (configuration cache)
@@ -100,5 +92,5 @@ tasks.register<Copy>("deployPlugin") {
 }
 
 tasks.build {
-    finalizedBy(tasks.named("deployPlugin"))
+    finalizedBy(deployPlugin)
 }

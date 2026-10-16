@@ -9,16 +9,21 @@ import com.github.marcoral.versatia.engine.descriptor.MemberOwner
 import com.github.marcoral.versatia.engine.descriptor.FunctionTarget
 import com.github.marcoral.versatia.engine.descriptor.Instantiator
 import com.github.marcoral.versatia.engine.descriptor.Invoker
+import com.github.marcoral.versatia.engine.descriptor.Parameter
 import com.github.marcoral.versatia.engine.descriptor.PluginTarget
 import com.github.marcoral.versatia.lifecycle.AutoInvoke
 import com.github.marcoral.versatia.lifecycle.LifecycleProcessors
 import com.github.marcoral.versatia.testsupport.Recorder
 import com.github.marcoral.versatia.testsupport.descriptor
 import com.github.marcoral.versatia.testsupport.fakePlugin
+import com.github.marcoral.versatia.testsupport.primary
 import com.github.marcoral.versatia.testsupport.testContext
 import kotlin.test.BeforeTest
 import kotlin.test.Test
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
 import org.bukkit.plugin.Plugin
 
 class Bridge {
@@ -35,6 +40,16 @@ object Hooks {
 
 object Beacon {
     fun always() = Recorder.record("Beacon.always", this)
+}
+
+interface Gateway
+
+class PlainGateway : Gateway
+
+class VaultGateway : Gateway
+
+object Checkout {
+    fun pay(gateway: Gateway) = Recorder.record("Checkout.pay", gateway)
 }
 
 /** `@ConditionalOnPlugin` at runtime: elements whose plugins are missing are left out, functions of a conditional class or object with it. */
@@ -63,11 +78,19 @@ class PluginEnhancerTest {
         ClassTarget(bridgeName, listOf(bridgeName), listOf(conditional("Vault")), emptyList(), Instantiator.Direct { Bridge() }),
     )
 
-    private fun function(className: String, name: String, classAnnotations: List<AnnotationOccurrence>, owner: MemberOwner, invoker: Invoker) = EnhancedElement(
+    private fun function(
+        className: String,
+        name: String,
+        classAnnotations: List<AnnotationOccurrence>,
+        owner: MemberOwner,
+        invoker: Invoker,
+        phase: EventType = EventType.PLUGIN_START_ONLY,
+        parameters: List<Parameter> = emptyList(),
+    ) = EnhancedElement(
         LifecycleProcessors.AUTO_INVOKE,
-        EventType.PLUGIN_START_ONLY,
-        AnnotationOccurrence(AutoInvoke::class.java.name, mapOf("phase" to EventType.PLUGIN_START_ONLY.name)),
-        FunctionTarget(className, className, name, owner, emptyList(), emptyList(), invoker, classAnnotations),
+        phase,
+        AnnotationOccurrence(AutoInvoke::class.java.name, mapOf("phase" to phase.name)),
+        FunctionTarget(className, className, name, owner, emptyList(), parameters, invoker, classAnnotations),
     )
 
     private val connect = function(bridgeName, "connect", listOf(conditional("Vault")), MemberOwner.INSTANCE, Invoker.Direct { instance, _ -> (instance as Bridge).connect() })
@@ -91,5 +114,82 @@ class PluginEnhancerTest {
         enhance("CommandAPI")
 
         assertEquals(listOf("Beacon.always"), Recorder.names())
+    }
+
+    @Test
+    fun `keeps the start decision at reload when a required plugin is enabled later`() {
+        val states = PluginStates()
+        val elements = descriptor(pluginBean, bridge, connect.copy(phase = EventType.PLUGIN_RELOAD_OR_START))
+        enhancer.enhance(elements, testContext("Alpha", states, plugin = fakePlugin("Alpha")))
+
+        val reload = testContext("Alpha", states, event = LifecycleEvent.RELOAD, plugin = fakePlugin("Alpha", enabledPlugins = setOf("Vault")))
+        enhancer.enhance(elements, reload)
+
+        assertEquals(emptyList(), Recorder.names())
+    }
+
+    @Test
+    fun `a skipped @Primary bean leaves the type to the other provider`() {
+        val gateway = Gateway::class.qualifiedName!!
+        fun bean(className: String, annotations: List<AnnotationOccurrence>, create: () -> Any) = EnhancedElement(
+            BeanProcessors.LOCAL,
+            EventType.PLUGIN_START_ONLY,
+            AnnotationOccurrence("test.Scope"),
+            ClassTarget(className, listOf(className, gateway), annotations, emptyList(), Instantiator.Direct { create() }),
+        )
+        val plain = bean(PlainGateway::class.qualifiedName!!, emptyList()) { PlainGateway() }
+        val vault = bean(VaultGateway::class.qualifiedName!!, listOf(primary, conditional("Vault"))) { VaultGateway() }
+        val pay = function(Checkout::class.qualifiedName!!, "pay", emptyList(), MemberOwner.OBJECT, Invoker.Direct { _, args -> Checkout.pay(args.single() as Gateway) }, parameters = listOf(Parameter(gateway)))
+        fun start(vararg enabledPlugins: String) = enhancer.enhance(
+            descriptor(pluginBean, plain, vault, pay),
+            testContext("Alpha", PluginStates(), plugin = fakePlugin("Alpha", enabledPlugins = enabledPlugins.toSet())),
+        )
+
+        start()
+        assertIs<PlainGateway>(Recorder.instanceOf("Checkout.pay"))
+
+        Recorder.reset()
+        start("Vault")
+        assertIs<VaultGateway>(Recorder.instanceOf("Checkout.pay"))
+    }
+
+    @Test
+    fun `runs every stop function even when one fails`() {
+        val states = PluginStates()
+        val failing = function(Beacon::class.qualifiedName!!, "fail", emptyList(), MemberOwner.OBJECT, Invoker.Direct { _, _ -> error("save failed") }, EventType.PLUGIN_STOP)
+        val closing = function(Hooks::class.qualifiedName!!, "close", emptyList(), MemberOwner.OBJECT, Invoker.Direct { _, _ -> Recorder.record("Hooks.close", Hooks) }, EventType.PLUGIN_STOP)
+        val elements = descriptor(pluginBean, failing, closing)
+        enhancer.enhance(elements, testContext("Alpha", states, plugin = fakePlugin("Alpha")))
+
+        val error = assertFailsWith<EnhancementException> { enhancer.enhance(elements, testContext("Alpha", states, event = LifecycleEvent.STOP, plugin = fakePlugin("Alpha"))) }
+
+        assertContains(error.message!!, "${Beacon::class.qualifiedName}.fail() failed at STOP")
+        assertEquals(listOf("Hooks.close"), Recorder.names())
+    }
+
+    @Test
+    fun `skips what is left of a start or a reload once the plugin is disabled`() {
+        val states = PluginStates()
+        var disableAt: LifecycleEvent? = null
+        lateinit var current: DefaultEnhancementContext
+        val disabling = function(Hooks::class.qualifiedName!!, "disable", emptyList(), MemberOwner.OBJECT, Invoker.Direct { _, _ ->
+            if (current.event == disableAt) current.cancel()
+        }, EventType.PLUGIN_RELOAD_OR_START)
+        val elements = descriptor(pluginBean, disabling, always.copy(phase = EventType.PLUGIN_RELOAD_OR_START))
+        fun run(event: LifecycleEvent, statesOfRun: PluginStates = states) {
+            current = testContext("Alpha", statesOfRun, event = event, plugin = fakePlugin("Alpha"))
+            enhancer.enhance(elements, current)
+        }
+
+        disableAt = LifecycleEvent.START
+        run(LifecycleEvent.START, PluginStates())
+        assertEquals(emptyList(), Recorder.names())
+
+        disableAt = LifecycleEvent.RELOAD
+        run(LifecycleEvent.START)
+        assertEquals(listOf("Beacon.always"), Recorder.names())
+        Recorder.reset()
+        run(LifecycleEvent.RELOAD)
+        assertEquals(emptyList(), Recorder.names())
     }
 }

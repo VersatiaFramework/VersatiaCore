@@ -15,16 +15,17 @@ Kotlin/JVM project; everything below is about how it adapts to each developer's 
 
 ## Dependency on VersatiaAPI
 
-The only production dependency is `com.github.marcoral.versatia:VersatiaAPI`. It exports the
-Paper API (compile classpath only), the Kotlin standard library and `kotlin-reflect`, so none of
-them is declared here.
+The main production dependency is `com.github.marcoral.versatia:VersatiaAPI`; the only other one
+is CommandAPI, described [below](#commandapi). VersatiaAPI exports the Paper API (compile
+classpath only), the Kotlin standard library and `kotlin-reflect`, so none of them is declared here.
 Three things cannot be inherited through a dependency and therefore stay in this build:
 
 - the Kotlin Gradle plugin, because plugins are not dependencies,
 - the Paper repository, because Gradle never inherits repositories,
 - the Java 21 target settings.
 
-VersatiaAPI is resolved from the local Maven repository (`mavenLocal()`), where its own build
+VersatiaAPI is resolved from the local Maven repository (`mavenLocal()`, filtered to the
+`com.github.marcoral.versatia` group; all repositories are declared in `settings.gradle.kts`), where its own build
 publishes it with `./gradlew publishToMavenLocal`. The two builds share nothing else; from this
 project's point of view VersatiaAPI is an ordinary external library.
 
@@ -42,7 +43,9 @@ classes come from the CommandAPI plugin on the server, when it is there. Its Kot
 (`commandapi-kotlin-paper` and what it pulls in) is a few extension functions that CommandAPI
 does not ship in its plugin, so they are bundled into the JAR like the VersatiaAPI classes. The
 DSL only references CommandAPI's API, and the command object is loaded only when the plugin is
-present, so no mapping or class-loading issue arises without it.
+present, so no mapping or class-loading issue arises without it. The DSL is compiled against
+CommandAPI 12.x; when the installed release is not compatible, registering the command fails,
+VersatiaCore logs one warning and keeps running without `/versatia`.
 
 ### VersatiaAPI classes at runtime
 
@@ -61,15 +64,15 @@ the configuration cache.
 ## Tests
 
 `kotlin("test")` with `useJUnitPlatform()` and `junit-platform-launcher` as `testRuntimeOnly`, as
-in VersatiaAPI. Two test-only dependencies make the end-to-end test possible:
+in VersatiaAPI. Three test-only dependencies make the end-to-end test possible:
 
 - `VersatiaAPI-ksp`, the real KSP processor, resolved from the local Maven repository like the
-  API;
+  API,
 - `dev.zacsweers.kctfork:ksp`, which runs the Kotlin compiler with KSP in-process. It is built
-  against exact Kotlin and KSP versions, so bump it together with the Kotlin plugin.
+  against exact Kotlin and KSP versions, so bump it together with the Kotlin plugin,
 - `paper-api` as `testImplementation`: the tests stand in for a plugin with a `java.lang.reflect.Proxy`
   implementing `org.bukkit.plugin.Plugin`, which needs the interface at runtime. VersatiaAPI
-  exports it for compilation only.
+  exports it for compilation only, so a plugin's own tests need the same declaration.
 
 See [runtime.md](runtime.md#tests) for what the tests cover.
 

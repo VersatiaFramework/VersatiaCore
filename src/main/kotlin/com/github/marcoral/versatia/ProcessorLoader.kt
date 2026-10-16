@@ -1,7 +1,8 @@
 package com.github.marcoral.versatia
 
+import com.github.marcoral.versatia.util.reflect.forceAccessible
+import com.github.marcoral.versatia.util.reflect.objectInstanceOrNull
 import java.lang.reflect.InvocationTargetException
-import java.lang.reflect.Modifier
 
 /**
  * Loads enhancement processors by the class name a descriptor gives, through the enhanced plugin's
@@ -25,21 +26,24 @@ class ProcessorLoader {
     }
 
     private fun instantiate(clazz: Class<*>): EnhancementProcessor {
-        val instance = try {
-            objectInstance(clazz) ?: clazz.getDeclaredConstructor().apply { isAccessible = true }.newInstance()
+        val instance = clazz.objectInstanceOrNull() ?: newInstance(clazz)
+        return instance as? EnhancementProcessor
+            ?: throw EnhancementException("${clazz.name} does not implement ${EnhancementProcessor::class.java.name}")
+    }
+
+    /** A missing constructor is told apart from one that throws, whose own exception is the reported cause. */
+    private fun newInstance(clazz: Class<*>): Any {
+        val constructor = try {
+            clazz.getDeclaredConstructor().forceAccessible()
         } catch (e: NoSuchMethodException) {
             throw EnhancementException("Enhancement processor ${clazz.name} has no no-argument constructor", e)
+        }
+        return try {
+            constructor.newInstance()
         } catch (e: InvocationTargetException) {
             throw EnhancementException("Enhancement processor ${clazz.name} failed to initialise", e.targetException)
         } catch (e: ReflectiveOperationException) {
             throw EnhancementException("Enhancement processor ${clazz.name} could not be created", e)
         }
-        return instance as? EnhancementProcessor
-            ?: throw EnhancementException("${clazz.name} does not implement ${EnhancementProcessor::class.java.name}")
     }
-
-    /** The instance of a Kotlin `object`, if [clazz] is one. */
-    private fun objectInstance(clazz: Class<*>) = clazz.declaredFields
-        .firstOrNull { it.name == "INSTANCE" && Modifier.isStatic(it.modifiers) && it.type == clazz }
-        ?.get(null)
 }

@@ -57,7 +57,7 @@ fun fakePlugin(
             "getName" -> name
             "getLogger" -> logger
             "getDataFolder" -> dataFolder ?: throw UnsupportedOperationException("FakePlugin $name has no data folder")
-            "getDescription" -> PluginDescriptionFile(name, "0.0.1", main ?: throw UnsupportedOperationException("FakePlugin $name has no main class"))
+            "getDescription", "getPluginMeta" -> PluginDescriptionFile(name, "0.0.1", main ?: throw UnsupportedOperationException("FakePlugin $name has no main class"))
             "getServer" -> fakeServer(registrations ?: mutableListOf(), enabledPlugins)
             "isEnabled" -> true
             "toString" -> "FakePlugin($name)"

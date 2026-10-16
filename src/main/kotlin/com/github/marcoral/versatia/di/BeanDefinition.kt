@@ -9,12 +9,16 @@ import com.github.marcoral.versatia.engine.descriptor.occurrenceOf
 
 enum class BeanScope { LOCAL, EXPOSED_SINGLETON, EXPOSED_PROTOTYPE }
 
-/** Something to inject: a type and, optionally, the name of the bean that must provide it. */
-data class Dependency(val type: String, val qualifier: String? = null) {
+/**
+ * Something to inject: a type and, optionally, the name of the bean that must provide it. An
+ * [optional] one keeps its default value when no bean provides it; one with [suppliedBy] is not
+ * injected at all, that processor supplies the argument.
+ */
+data class Dependency(val type: String, val qualifier: String? = null, val optional: Boolean = false, val suppliedBy: String? = null) {
     override fun toString() = if (qualifier == null) type else "$type named \"$qualifier\""
 
     companion object {
-        fun of(parameter: Parameter) = Dependency(parameter.type, parameter.annotations.qualifier())
+        fun of(parameter: Parameter) = Dependency(parameter.type, parameter.annotations.qualifier(), parameter.optional, parameter.suppliedBy)
     }
 }
 

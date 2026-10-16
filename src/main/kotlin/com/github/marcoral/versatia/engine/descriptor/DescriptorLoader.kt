@@ -3,6 +3,7 @@ package com.github.marcoral.versatia.engine.descriptor
 import com.github.marcoral.versatia.EnhancementContext
 import com.github.marcoral.versatia.EnhancementException
 import com.github.marcoral.versatia.classLoader
+import com.github.marcoral.versatia.util.reflect.objectInstanceOrNull
 
 /** Finds the generated descriptor by name; nothing is scanned. See docs/runtime.md. */
 object DescriptorLoader {
@@ -15,7 +16,7 @@ object DescriptorLoader {
         } catch (e: ClassNotFoundException) {
             throw EnhancementException("Descriptor $name not found. Is the VersatiaAPI KSP processor applied to the plugin build?", e)
         }
-        val instance = clazz.getDeclaredField("INSTANCE").get(null)
+        val instance = clazz.objectInstanceOrNull() ?: throw EnhancementException("$name is not a Kotlin object; it is not a Versatia descriptor")
 
         // Read the version through plain getters first: a descriptor of another format may not
         // implement the interface this runtime knows

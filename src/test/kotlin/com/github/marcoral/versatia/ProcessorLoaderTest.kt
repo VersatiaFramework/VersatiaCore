@@ -4,6 +4,7 @@ import com.github.marcoral.versatia.engine.descriptor.EnhancedElement
 import com.github.marcoral.versatia.testsupport.testContext
 import kotlin.test.Test
 import kotlin.test.assertContains
+import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertSame
@@ -21,6 +22,14 @@ class NeedsArgumentsEnhancementProcessor(val name: String) : EnhancementProcesso
 }
 
 class NotAProcessor
+
+class LookupFailingEnhancementProcessor : EnhancementProcessor {
+    init {
+        javaClass.getMethod("missingMethod")
+    }
+
+    override fun process(elements: List<EnhancedElement>, context: EnhancementContext) = Unit
+}
 
 class ProcessorLoaderTest {
     private val loader = ProcessorLoader()
@@ -53,5 +62,12 @@ class ProcessorLoaderTest {
 
         val noConstructor = assertFailsWith<EnhancementException> { loader.load(NeedsArgumentsEnhancementProcessor::class.java.name, context) }
         assertContains(noConstructor.message!!, "has no no-argument constructor")
+    }
+
+    @Test
+    fun `reports what a throwing constructor threw instead of a missing constructor`() {
+        val error = assertFailsWith<EnhancementException> { loader.load(LookupFailingEnhancementProcessor::class.java.name, context) }
+        assertEquals("Enhancement processor ${LookupFailingEnhancementProcessor::class.java.name} failed to initialise", error.message)
+        assertIs<NoSuchMethodException>(error.cause)
     }
 }

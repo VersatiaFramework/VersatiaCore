@@ -1,5 +1,6 @@
 package com.github.marcoral.versatia
 
+import com.github.marcoral.versatia.sample.Ticker
 import com.github.marcoral.versatia.testsupport.Recorder
 import com.github.marcoral.versatia.testsupport.fakePlugin
 import kotlin.test.BeforeTest
@@ -7,18 +8,25 @@ import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertSame
+import kotlin.test.assertTrue
 
 /** The runtime over hand-written descriptors: the registry of enhanced plugins, friendly names and the reload event. */
 class VersatiaRuntimeTest {
-    private val runtime = VersatiaRuntime()
+    private val states = PluginStates()
+    private val runtime = VersatiaRuntime(states)
 
     private val tickerMain = "com.github.marcoral.versatia.sample.TickerPlugin"
     private val plainMain = "com.github.marcoral.versatia.engine.descriptor.sample.SamplePlugin"
 
     @BeforeTest
-    fun setUp() = Recorder.reset()
+    fun setUp() {
+        Recorder.reset()
+        Ticker.onStart = {}
+        Ticker.onTick = {}
+    }
 
     @Test
     fun `registers plugins under their friendly name or their plugin name, in start order`() {
@@ -66,5 +74,101 @@ class VersatiaRuntimeTest {
         val error = assertFailsWith<EnhancementException> { runtime.enhance(fakePlugin("Clone", main = tickerMain)) }
 
         assertContains(error.message!!, "Plugin Clone: the friendly name \"ticker\" is already used by TickerPlugin")
+    }
+
+    @Test
+    fun `a plugin whose start failed skips the stop phase when disabled and cannot be reloaded`() {
+        val ticker = fakePlugin("TickerPlugin", main = tickerMain)
+        Ticker.onStart = { error("start failed") }
+        assertFailsWith<EnhancementException> { runtime.enhance(ticker) }
+
+        runtime.disable(ticker)
+
+        assertEquals(emptyList(), Recorder.names())
+        assertEquals(emptySet(), runtime.registry.friendlyNames)
+        assertEquals("Plugin TickerPlugin is not running", assertFailsWith<EnhancementException> { runtime.reload(ticker) }.message)
+    }
+
+    @Test
+    fun `a plugin without a descriptor is disabled quietly`() {
+        val ghost = fakePlugin("Ghost", main = "com.example.ghost.GhostPlugin")
+        assertFailsWith<EnhancementException> { runtime.enhance(ghost) }
+
+        runtime.disable(ghost)
+    }
+
+    @Test
+    fun `a plugin that disables itself while starting is not registered and can start again`() {
+        val ticker = fakePlugin("TickerPlugin", main = tickerMain)
+        Ticker.onStart = { runtime.disable(ticker) }
+
+        runtime.enhance(ticker)
+
+        assertFalse("Ticker.stop" in Recorder.names())
+        assertEquals(emptySet(), runtime.registry.friendlyNames)
+
+        Ticker.onStart = {}
+        runtime.enhance(ticker)
+        assertSame(ticker, runtime.registry["ticker"])
+    }
+
+    @Test
+    fun `a plugin that disables itself while starting runs none of its later start functions`() {
+        val ticker = fakePlugin("TickerPlugin", main = tickerMain)
+        Ticker.onStart = { runtime.disable(ticker) }
+
+        runtime.enhance(ticker)
+
+        assertEquals(listOf("Ticker.start"), Recorder.names())
+    }
+
+    @Test
+    fun `a plugin that disables itself while reloading stops once and can start again`() {
+        val ticker = fakePlugin("TickerPlugin", main = tickerMain)
+        runtime.enhance(ticker)
+        Recorder.reset()
+        Ticker.onTick = { runtime.disable(ticker) }
+
+        runtime.reload(ticker)
+
+        assertEquals(listOf("Ticker.stop", "Ticker.tick"), Recorder.names())
+        assertEquals(emptySet(), runtime.registry.friendlyNames)
+        Ticker.onTick = {}
+        runtime.enhance(ticker)
+        assertSame(ticker, runtime.registry["ticker"])
+    }
+
+    @Test
+    fun `a start failing after the plugin disabled itself keeps its exception when its state fails to close`() {
+        val ticker = fakePlugin("TickerPlugin", main = tickerMain)
+        Ticker.onStart = {
+            val store = states.of(ticker.name)
+            runtime.disable(ticker)
+            store.getOrPut(StateKey("Test.leak")) { AutoCloseable { throw IllegalStateException("close failed") } }
+            throw IllegalStateException("start failed")
+        }
+
+        val error = assertFailsWith<Exception> { runtime.enhance(ticker) }
+
+        assertTrue(generateSequence<Throwable>(error) { it.cause }.any { it.message == "start failed" }, "the start failure is reported")
+        assertEquals("close failed", error.suppressed.single().message)
+    }
+
+    @Test
+    fun `refuses a reload from inside the plugin's start or reload`() {
+        val ticker = fakePlugin("TickerPlugin", main = tickerMain)
+        Ticker.onStart = { runtime.reload(ticker) }
+        val starting = assertFailsWith<EnhancementException> { runtime.enhance(ticker) }
+        assertEquals("Plugin TickerPlugin is still starting; it can be reloaded once its start has completed", starting.message)
+
+        runtime.disable(ticker)
+        Ticker.onStart = {}
+        runtime.enhance(ticker)
+        Ticker.onTick = { runtime.reload(ticker) }
+        val reloading = assertFailsWith<EnhancementException> { runtime.reload(ticker) }
+        assertEquals("Plugin TickerPlugin is already reloading; a reload cannot start another one", reloading.message)
+
+        Ticker.onTick = {}
+        runtime.reload(ticker)
     }
 }

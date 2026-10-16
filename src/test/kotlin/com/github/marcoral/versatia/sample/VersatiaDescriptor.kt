@@ -44,9 +44,18 @@ object VersatiaDescriptor : VersatiaPluginDescriptor {
 }
 
 object Ticker {
-    fun start() = Recorder.record("Ticker.start", this)
+    var onStart: () -> Unit = {}
+    var onTick: () -> Unit = {}
 
-    fun tick() = Recorder.record("Ticker.tick", this)
+    fun start() {
+        onStart()
+        Recorder.record("Ticker.start", this)
+    }
+
+    fun tick() {
+        onTick()
+        Recorder.record("Ticker.tick", this)
+    }
 
     fun stop() = Recorder.record("Ticker.stop", this)
 }

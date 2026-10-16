@@ -2,7 +2,6 @@ package com.github.marcoral.versatia
 
 import com.github.marcoral.versatia.engine.descriptor.ClassTarget
 import com.github.marcoral.versatia.engine.descriptor.ElementTarget
-import com.github.marcoral.versatia.engine.descriptor.EnhancedElement
 import com.github.marcoral.versatia.engine.descriptor.FunctionTarget
 import com.github.marcoral.versatia.engine.descriptor.PluginTarget
 import com.github.marcoral.versatia.engine.descriptor.PropertyTarget
@@ -10,13 +9,15 @@ import com.github.marcoral.versatia.engine.descriptor.VersatiaPluginDescriptor
 
 /**
  * Dispatches a plugin's descriptor: the elements whose phase applies to the event and whose
- * `@ConditionalOnPlugin` plugins are enabled, grouped by the processor they name, each group to
- * its processor. Every processor is loaded before any of them runs, so a missing one leaves the
- * plugin untouched. See docs/runtime.md.
+ * `@ConditionalOnPlugin` plugins were enabled when the plugin started, grouped by the processor
+ * they name, each group to its processor. Every processor is loaded before any of them runs, so a
+ * missing one leaves the plugin untouched; at stop every processor runs even when another fails.
+ * See docs/runtime.md.
  */
 class PluginEnhancer(private val processors: ProcessorLoader) {
     fun enhance(descriptor: VersatiaPluginDescriptor, context: DefaultEnhancementContext) {
-        val missing = descriptor.elements.filter { it.phase.appliesTo(context.event) }.map { it to missingPlugins(it, context) }
+        val absent = absentPlugins(descriptor, context)
+        val missing = descriptor.elements.filter { it.phase.appliesTo(context.event) }.map { it to requiredPlugins(it.target).filter(absent::contains) }
         val skipped = missing.filter { (_, plugins) -> plugins.isNotEmpty() }
         if (skipped.isNotEmpty() && context.event == LifecycleEvent.START) {
             val classes = skipped.map { (element, _) -> element.target.className.substringAfterLast('.') }.distinct()
@@ -24,14 +25,25 @@ class PluginEnhancer(private val processors: ProcessorLoader) {
             context.plugin.logger.info("Skipped ${classes.joinToString()}: ${plugins.joinToString()} ${if (plugins.size == 1) "is" else "are"} not installed")
         }
         val groups = missing.filter { (_, plugins) -> plugins.isEmpty() }.map { (element, _) -> element }.groupBy { it.processorClass }
+        if (context.event == LifecycleEvent.STOP) {
+            val steps = groups.map { (processorClass, elements) -> { processors.load(processorClass, context).process(elements, context) } }
+            return context.runSteps(steps + { context.runCompletionActions() })
+        }
         val loaded = groups.keys.associateWith { processors.load(it, context) }
-        for ((processorClass, elements) in groups) loaded.getValue(processorClass).process(elements, context)
+        for ((processorClass, elements) in groups) if (!context.cancelled) loaded.getValue(processorClass).process(elements, context)
         context.runCompletionActions()
     }
 
-    /** The plugins [element] needs that are not enabled: those of its own condition and, for a function or property, of its class's. */
-    private fun missingPlugins(element: EnhancedElement, context: EnhancementContext) =
-        requiredPlugins(element.target).filterNot { context.plugin.server.pluginManager.isPluginEnabled(it) }
+    /**
+     * The `@ConditionalOnPlugin` plugins that are not enabled, decided once when the plugin starts:
+     * an element skipped then stays skipped at every reload and at stop, like the beans it would have made.
+     */
+    private fun absentPlugins(descriptor: VersatiaPluginDescriptor, context: EnhancementContext): Set<String> {
+        if (context.event != LifecycleEvent.START) context.state[ABSENT_PLUGINS]?.let { return it }
+        val absent = descriptor.elements.flatMap { requiredPlugins(it.target) }.distinct()
+            .filterNot { context.plugin.server.pluginManager.isPluginEnabled(it) }.toSet()
+        return if (context.event == LifecycleEvent.START) context.state.getOrPut(ABSENT_PLUGINS) { absent } else absent
+    }
 
     private fun requiredPlugins(target: ElementTarget): List<String> {
         val annotations = when (target) {
@@ -42,5 +54,9 @@ class PluginEnhancer(private val processors: ProcessorLoader) {
         }
         return annotations.filter { it.annotationClass == ConditionalOnPlugin::class.java.name }
             .flatMap { (it.arguments["value"] as? List<*>).orEmpty() }.map { it.toString() }.distinct()
+    }
+
+    private companion object {
+        val ABSENT_PLUGINS = StateKey<Set<String>>("ConditionalOnPlugin.absentPlugins")
     }
 }

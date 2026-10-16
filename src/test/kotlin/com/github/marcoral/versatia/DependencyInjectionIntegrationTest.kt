@@ -102,8 +102,9 @@ import com.github.marcoral.versatia.testsupport.exposedBeanCount
             init { Recorder.record("Ticket", this) }
         }
 
+        // Open, so the compile-time step cannot rule out a provider in another plugin and the runtime reports it
         @LocalBean
-        class Secret {
+        open class Secret {
             init { Recorder.record("Secret", this) }
         }
 
@@ -242,6 +243,48 @@ import com.github.marcoral.versatia.testsupport.exposedBeanCount
 
         states.drop("Alpha")
         assertEquals(0, states.exposedBeanCount(), "closing the plugin's state withdraws what it exposed")
+    }
+
+    @Test
+    fun `custom annotations carrying Qualifier and Primary select beans like the attributes themselves`() {
+        val source = """
+            package com.example.delta
+
+            import com.github.marcoral.versatia.VersatiaPlugin
+            import com.github.marcoral.versatia.di.LocalBean
+            import com.github.marcoral.versatia.di.Primary
+            import com.github.marcoral.versatia.di.Qualifier
+            import com.github.marcoral.versatia.testsupport.Recorder
+
+            @Qualifier("fast")
+            @Target(AnnotationTarget.CLASS, AnnotationTarget.VALUE_PARAMETER)
+            annotation class Fast
+
+            @Primary
+            annotation class Preferred
+
+            interface Engine
+
+            @Fast @LocalBean
+            class FastEngine : Engine { init { Recorder.record("FastEngine", this) } }
+
+            @Preferred @LocalBean
+            class SteadyEngine : Engine { init { Recorder.record("SteadyEngine", this) } }
+
+            @LocalBean
+            class Car(@Fast val engine: Engine) { init { Recorder.record("Car", this) } }
+
+            @LocalBean
+            class Bus(val engine: Engine) { init { Recorder.record("Bus", this) } }
+
+            class DeltaPlugin : VersatiaPlugin()
+        """
+        val loader = pluginClassLoader(compilePlugin("Delta", "com.example.delta.DeltaPlugin", source), Recorder::class.java.classLoader)
+
+        enhance("com.example.delta.DeltaPlugin", testContext("Delta", states, loader))
+
+        assertSame(Recorder.instanceOf("FastEngine"), Recorder.instanceOf("Car").field("engine"), "@Fast selects the bean named fast")
+        assertSame(Recorder.instanceOf("SteadyEngine"), Recorder.instanceOf("Bus").field("engine"), "@Preferred makes its bean primary")
     }
 
     private fun Any.field(name: String) = javaClass.getDeclaredField(name).apply { isAccessible = true }.get(this)!!

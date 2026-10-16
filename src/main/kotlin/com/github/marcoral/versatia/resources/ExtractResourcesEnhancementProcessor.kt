@@ -8,6 +8,10 @@ import com.github.marcoral.versatia.engine.descriptor.EnhancedElement
 import com.github.marcoral.versatia.engine.descriptor.PluginTarget
 import java.io.File
 import java.io.InputStream
+import java.nio.file.FileAlreadyExistsException
+import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.StandardOpenOption
 import java.util.jar.JarFile
 
 /**
@@ -49,15 +53,23 @@ class ExtractResourcesEnhancementProcessor : EnhancementProcessor {
         }
     }
 
-    /** Writes the file into the data folder unless it already exists; true when it was written. */
+    /**
+     * Writes the file into the data folder unless something, even a dangling symbolic link, already
+     * exists there; true when it was written. The path is checked lexically, so a configuration file
+     * the admin replaced with a link to a shared copy is simply left alone.
+     */
     private fun extract(path: String, content: InputStream, context: EnhancementContext): Boolean {
-        val dataFolder = context.plugin.dataFolder
-        val destination = dataFolder.resolve(path)
-        if (!destination.canonicalPath.startsWith(dataFolder.canonicalPath + File.separator))
+        val dataFolder = context.plugin.dataFolder.toPath().toAbsolutePath().normalize()
+        val destination = dataFolder.resolve(path).normalize()
+        if (destination == dataFolder || !destination.startsWith(dataFolder))
             throw EnhancementException("Plugin ${context.plugin.name}: resource $path would be written outside the data folder")
-        if (destination.exists()) return false
-        destination.parentFile.mkdirs()
-        destination.outputStream().use { content.copyTo(it) }
-        return true
+        if (Files.exists(destination, LinkOption.NOFOLLOW_LINKS)) return false
+        Files.createDirectories(destination.parent)
+        return try {
+            Files.newOutputStream(destination, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE).use { content.copyTo(it) }
+            true
+        } catch (e: FileAlreadyExistsException) {
+            false
+        }
     }
 }

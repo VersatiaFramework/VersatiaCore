@@ -51,4 +51,12 @@ class DescriptorLoaderTest {
         assertContains(error.message!!, VersatiaPluginDescriptor.FORMAT_VERSION.toString())
         assertContains(error.message!!, "Rebuild the plugin")
     }
+
+    @Test
+    fun `rejects a descriptor class that is not an object`() {
+        val error = assertFailsWith<EnhancementException> {
+            DescriptorLoader.load("com.github.marcoral.versatia.engine.descriptor.notobject.Plugin", context)
+        }
+        assertEquals("com.github.marcoral.versatia.engine.descriptor.notobject.VersatiaDescriptor is not a Kotlin object; it is not a Versatia descriptor", error.message)
+    }
 }
