@@ -6,6 +6,7 @@ import com.github.marcoral.versatia.PluginStates
 import com.github.marcoral.versatia.ProcessorLoader
 import com.github.marcoral.versatia.engine.descriptor.DescriptorLoader
 import com.github.marcoral.versatia.ksp.VersatiaSymbolProcessorProvider
+import com.github.marcoral.versatia.testsupport.FakeCore
 import com.github.marcoral.versatia.testsupport.Recorder
 import com.github.marcoral.versatia.testsupport.fakePlugin
 import com.github.marcoral.versatia.testsupport.testContext
@@ -95,7 +96,7 @@ class ValueIntegrationTest {
         dataFolder.resolve("config.yml").writeText("limits:\n  max: 4\nshop:\n  hours: [8, 20]\n  slots: 3\n")
         dataFolder.resolve("rules.yml").writeText("limits:\n  mode: hard\n")
         val loader = URLClassLoader(arrayOf(result.outputDirectory.toURI().toURL()), Recorder::class.java.classLoader)
-        val states = PluginStates()
+        val states = PluginStates().also(::FakeCore)
         val enhancer = PluginEnhancer(ProcessorLoader())
         fun enhance(event: LifecycleEvent) {
             val context = testContext("Values", states, loader, event, fakePlugin("Values", loader, dataFolder))

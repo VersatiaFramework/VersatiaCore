@@ -41,6 +41,9 @@ defines what is generated, VersatiaCore must be able to read it.
 
 - Register the listeners and call the functions listed in the descriptor at each event; Bukkit
   unregisters the listeners on disable.
+- Run the plugins' coroutines: every `BackgroundTask` from the tick after the start, restarted by
+  every reload, and each plugin's `PluginScope` until its stop, all on the server thread, driven by
+  one Bukkit timer; see [runtime.md](runtime.md#tasks-task).
 - Construct components and resolve their dependencies from the descriptor, without runtime
   discovery.
 - Unpack resources and perform other repetitive `onEnable` setup on behalf of plugins.

@@ -47,11 +47,12 @@ tasks.test {
     useJUnitPlatform()
 }
 
-// Expands ${version} and ${kotlinVersion} in plugin.yml
+// Expands ${version}, ${kotlinVersion} and ${coroutinesVersion} in plugin.yml; the libraries: line must match what VersatiaAPI exports
 tasks.processResources {
     val props = mapOf(
         "version" to project.version,
         "kotlinVersion" to getKotlinPluginVersion(),
+        "coroutinesVersion" to libs.versions.coroutines.get(),
     )
     inputs.properties(props)
     filesMatching("plugin.yml") {

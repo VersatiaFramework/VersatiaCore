@@ -2,6 +2,7 @@ package com.github.marcoral.versatia
 
 import com.github.marcoral.versatia.engine.descriptor.DescriptorLoader
 import com.github.marcoral.versatia.ksp.VersatiaSymbolProcessorProvider
+import com.github.marcoral.versatia.testsupport.FakeCore
 import com.github.marcoral.versatia.testsupport.Recorder
 import com.github.marcoral.versatia.testsupport.exposedBeanCount
 import com.github.marcoral.versatia.testsupport.testContext
@@ -39,6 +40,7 @@ class DependencyInjectionIntegrationTest {
         Recorder.reset()
         states = PluginStates()
         enhancer = PluginEnhancer(ProcessorLoader())
+        FakeCore(states)
     }
 
     /** Compiles one plugin; [dependsOn] plays the role of a plugin listed under `depend:`. */
@@ -189,6 +191,7 @@ class DependencyInjectionIntegrationTest {
         val betaLoader = pluginClassLoader(beta, alphaLoader)
         val gammaLoader = pluginClassLoader(gamma, alphaLoader)
 
+        val coreExposed = states.exposedBeanCount()
         val alphaContext = testContext("Alpha", states, alphaLoader)
         enhance("com.example.alpha.AlphaPlugin", alphaContext)
         val alphaEvents = Recorder.names()
@@ -208,7 +211,7 @@ class DependencyInjectionIntegrationTest {
         assert(alphaEvents.indexOf("Secret") < alphaEvents.indexOf("ConsoleGreeter"))
         assert(alphaEvents.indexOf("ConsoleGreeter") < alphaEvents.indexOf("HiddenAudit"))
         assert(alphaEvents.indexOf("Ticket") < alphaEvents.indexOf("HiddenAudit"))
-        assertEquals(2, states.exposedBeanCount(), "Clock and Ticket are exposed, local beans are forgotten")
+        assertEquals(coreExposed + 2, states.exposedBeanCount(), "Clock and Ticket are exposed, local beans are forgotten")
 
         enhance("com.example.beta.BetaPlugin", testContext("Beta", states, betaLoader))
         assertEquals(listOf("Ticket", "BetaService", "BetaWorker"), Recorder.names().drop(10))
@@ -239,7 +242,7 @@ class DependencyInjectionIntegrationTest {
         assertEquals(listOf("Startup.bye"), Recorder.names())
 
         states.drop("Alpha")
-        assertEquals(0, states.exposedBeanCount(), "closing the plugin's state withdraws what it exposed")
+        assertEquals(coreExposed, states.exposedBeanCount(), "closing the plugin's state withdraws what it exposed")
     }
 
     @Test

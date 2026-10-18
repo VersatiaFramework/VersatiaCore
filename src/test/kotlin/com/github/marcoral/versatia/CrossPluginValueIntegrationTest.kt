@@ -5,6 +5,7 @@ import com.github.marcoral.versatia.di.BeanResolver
 import com.github.marcoral.versatia.engine.command.PluginInfo
 import com.github.marcoral.versatia.engine.descriptor.VersatiaPluginDescriptor
 import com.github.marcoral.versatia.ksp.VersatiaSymbolProcessorProvider
+import com.github.marcoral.versatia.testsupport.FakeCore
 import com.github.marcoral.versatia.testsupport.Recorder
 import com.github.marcoral.versatia.testsupport.fakePlugin
 import com.tschuchort.compiletesting.JvmCompilationResult
@@ -38,7 +39,7 @@ class CrossPluginValueIntegrationTest {
     @TempDir
     lateinit var tempDir: File
 
-    private val states = PluginStates()
+    private val states = PluginStates().also(::FakeCore)
     private val runtime = VersatiaRuntime(states)
     private val priceList = "com.example.economy.PriceList"
     private val economyConfig by lazy { tempDir.resolve("Economy").apply { mkdirs() }.resolve("config.yml") }
@@ -254,7 +255,7 @@ class CrossPluginValueIntegrationTest {
             })
         }
         var debug = false
-        val runtime = VersatiaRuntime(PluginStates(), debugLog = DebugLog(logger) { debug })
+        val runtime = VersatiaRuntime(PluginStates().also(::FakeCore), debugLog = DebugLog(logger) { debug })
         val economyResult = compile("Economy", economySource)
         val economy = plugin("Economy", economyResult, Recorder::class.java.classLoader)
         val shop = plugin("Shop", compile("Shop", consumerSource("Shop"), economyResult), economy.javaClass.classLoader)

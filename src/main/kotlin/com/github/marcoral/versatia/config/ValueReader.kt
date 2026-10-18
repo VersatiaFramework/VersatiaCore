@@ -20,6 +20,8 @@ import com.github.marcoral.versatia.util.config.getLocationOrThrow
 import com.github.marcoral.versatia.util.config.getLongListOrThrow
 import com.github.marcoral.versatia.util.config.getLongOrThrow
 import com.github.marcoral.versatia.util.config.getOfflinePlayerOrThrow
+import com.github.marcoral.versatia.util.config.getDurationList
+import com.github.marcoral.versatia.util.config.getDurationOrThrow
 import com.github.marcoral.versatia.util.config.getPercentList
 import com.github.marcoral.versatia.util.config.getPercentOrThrow
 import com.github.marcoral.versatia.util.config.getStringListOrThrow
@@ -32,6 +34,7 @@ import com.github.marcoral.versatia.util.config.getVectorOrThrow
 import com.github.marcoral.versatia.util.config.pathOf
 import com.github.marcoral.versatia.util.reflect.objectOrNewInstance
 import com.github.marcoral.versatia.util.type.Percent
+import kotlin.time.Duration
 import org.bukkit.Color
 import org.bukkit.Location
 import org.bukkit.OfflinePlayer
@@ -113,6 +116,7 @@ internal class ValueReader(private val classLoader: ClassLoader) {
             ULong::class.qualifiedName!! to { getULongOrThrow(it) },
             String::class.qualifiedName!! to { getStringOrThrow(it) },
             Percent::class.qualifiedName!! to { getPercentOrThrow(it) },
+            Duration::class.qualifiedName!! to { getDurationOrThrow(it) },
             Color::class.qualifiedName!! to { getColorOrThrow(it) },
             Location::class.qualifiedName!! to { getLocationOrThrow(it) },
             OfflinePlayer::class.qualifiedName!! to { getOfflinePlayerOrThrow(it) },
@@ -131,6 +135,7 @@ internal class ValueReader(private val classLoader: ClassLoader) {
             ULong::class.qualifiedName!! to { getULongList(it) },
             String::class.qualifiedName!! to { getStringListOrThrow(it) },
             Percent::class.qualifiedName!! to { getPercentList(it) },
+            Duration::class.qualifiedName!! to { getDurationList(it) },
         )
     }
 }

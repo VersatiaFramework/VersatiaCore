@@ -6,6 +6,7 @@ import com.github.marcoral.versatia.util.type.Percent
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.time.Duration.Companion.minutes
 import org.bukkit.configuration.file.YamlConfiguration
 
 class Holder {
@@ -37,6 +38,7 @@ class ValueReaderTest {
             "kotlin.ULong" to ("6" to 6uL),
             "kotlin.String" to ("text" to "text"),
             Percent::class.qualifiedName!! to ("50%" to Percent.of(50.0)),
+            "kotlin.time.Duration" to ("1h 30m" to 90.minutes),
         )
         assertEquals(ValueTypes.SCALARS, samples.keys)
         for ((name, sample) in samples) {

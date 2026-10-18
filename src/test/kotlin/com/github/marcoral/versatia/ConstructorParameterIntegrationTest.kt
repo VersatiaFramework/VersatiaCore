@@ -3,6 +3,7 @@ package com.github.marcoral.versatia
 import com.github.marcoral.versatia.config.PreviousValueTracking
 import com.github.marcoral.versatia.engine.descriptor.DescriptorLoader
 import com.github.marcoral.versatia.ksp.VersatiaSymbolProcessorProvider
+import com.github.marcoral.versatia.testsupport.FakeCore
 import com.github.marcoral.versatia.testsupport.Recorder
 import com.github.marcoral.versatia.testsupport.fakePlugin
 import com.github.marcoral.versatia.testsupport.testContext
@@ -50,7 +51,7 @@ class ConstructorParameterIntegrationTest {
         }.compile()
         assertEquals(KotlinCompilation.ExitCode.OK, result.exitCode, result.messages)
         val loader = URLClassLoader(arrayOf(result.outputDirectory.toURI().toURL()), Recorder::class.java.classLoader)
-        val states = PluginStates()
+        val states = PluginStates().also(::FakeCore)
         val enhancer = PluginEnhancer(ProcessorLoader())
         val plugin = fakePlugin("Ctor", loader, dataFolder, enabledPlugins = enabledPlugins)
         return { event ->

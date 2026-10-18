@@ -14,12 +14,20 @@ Kotlin/JVM project; everything below is about how it adapts to each developer's 
   `libraries:` and Paper downloads them at server start. The version placeholder is filled from the
   Kotlin Gradle plugin version during `processResources`, so the versions can never drift apart.
   `kotlin-reflect` is needed because VersatiaAPI's `util.reflect` package depends on it at runtime.
+- `kotlinx-coroutines` is not bundled either. `plugin.yml` lists
+  `org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:${coroutinesVersion}`, the JVM artifact
+  because Paper's Maven resolver reads POMs only and cannot pick the JVM variant of the
+  multiplatform `kotlinx-coroutines-core`; `processResources` fills the placeholder from the
+  catalog's `coroutines` version, the one VersatiaAPI exports with a strict version, so the
+  `libraries:` line always matches what plugins compile against. VersatiaCore is the only plugin
+  that lists it.
 
 ## Dependency on VersatiaAPI
 
 The main production dependency is `com.github.marcoral.versatia:VersatiaAPI`; the only other one
 is CommandAPI, described [below](#commandapi). VersatiaAPI exports the Paper API (compile
-classpath only), the Kotlin standard library and `kotlin-reflect`, so none of them is declared here.
+classpath only), the Kotlin standard library, `kotlin-reflect` and `kotlinx-coroutines-core`, so
+none of them is declared here.
 Three things cannot be inherited through a dependency and therefore stay in this build:
 
 - the Kotlin Gradle plugin, because plugins are not dependencies,
@@ -53,8 +61,8 @@ VersatiaCore logs one warning and keeps running without `/versatia`.
 
 The `jar` task unpacks the `VersatiaAPI-*` and `commandapi-kotlin-*` JARs from the runtime
 classpath into the plugin JAR (`kotlin_module` files excluded). VersatiaAPI is not published to a remote repository, so
-Paper's `libraries:` mechanism cannot fetch it; `kotlin-stdlib` and `kotlin-reflect` are left to
-`libraries:` as before. Plugins declare `depend: [VersatiaCore]`, which makes Bukkit's plugin class
+Paper's `libraries:` mechanism cannot fetch it; `kotlin-stdlib`, `kotlin-reflect` and
+`kotlinx-coroutines-core-jvm` are on the runtime classpath too but left to `libraries:`. Plugins declare `depend: [VersatiaCore]`, which makes Bukkit's plugin class
 loader resolve VersatiaAPI classes from this JAR, so plugins must not bundle their own copy.
 The same holds for Kotlin itself: Paper loads each plugin's `libraries:` into a separate class
 loader, so a dependent plugin that listed `kotlin-stdlib` would get a second `Function1` class and

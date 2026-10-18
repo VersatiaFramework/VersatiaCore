@@ -7,6 +7,8 @@ description: Core of the Versatia framework.
 libraries:
   - org.jetbrains.kotlin:kotlin-stdlib:${kotlinVersion}
   - org.jetbrains.kotlin:kotlin-reflect:${kotlinVersion}
+  # Maven Resolver reads POMs only, so the JVM artifact is named, not the multiplatform one
+  - org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:${coroutinesVersion}
 # Optional: with the CommandAPI plugin installed, VersatiaCore registers /versatia
 softdepend:
   - CommandAPI
