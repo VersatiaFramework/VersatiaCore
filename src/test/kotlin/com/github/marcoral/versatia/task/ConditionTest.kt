@@ -201,6 +201,44 @@ class ConditionTest {
     }
 
     @Test
+    fun `a closed condition stops listening, keeps its value and ignores rechecks, however often it is closed`() {
+        var open = true
+        var checks = 0
+        val condition = scope.condition(recheckOn<Ping>()) {
+            checks++
+            open
+        }
+        fire(Ping())
+        open = false
+        condition.close()
+        condition.close()
+        assertEquals(0, listeners())
+
+        loop.heartbeat()
+        condition.recheck()
+        thread { condition.recheck() }.join()
+        loop.heartbeat()
+        assertTrue(condition.value)
+        assertEquals(1, checks)
+    }
+
+    @Test
+    fun `use closes a coroutine's condition before the coroutine completes`() {
+        var listening = -1
+        val job = scope.launch {
+            condition(recheckOn<Ping>()) { true }.use { delayTick() }
+            listening = listeners()
+            delayTick()
+        }
+        assertEquals(1, listeners())
+
+        loop.heartbeat()
+        assertEquals(0, listening)
+        loop.heartbeat()
+        assertTrue(job.isCompleted)
+    }
+
+    @Test
     fun `a condition of the scope stops listening when the scope stops`() {
         scope.condition(recheckOn<Ping>()) { true }
         assertEquals(1, listeners())

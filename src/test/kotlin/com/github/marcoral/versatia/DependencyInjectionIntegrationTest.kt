@@ -4,7 +4,9 @@ import com.github.marcoral.versatia.engine.descriptor.DescriptorLoader
 import com.github.marcoral.versatia.ksp.VersatiaSymbolProcessorProvider
 import com.github.marcoral.versatia.testsupport.FakeCore
 import com.github.marcoral.versatia.testsupport.Recorder
+import com.github.marcoral.versatia.testsupport.captureLog
 import com.github.marcoral.versatia.testsupport.exposedBeanCount
+import com.github.marcoral.versatia.testsupport.fakePlugin
 import com.github.marcoral.versatia.testsupport.testContext
 import com.tschuchort.compiletesting.JvmCompilationResult
 import com.tschuchort.compiletesting.KotlinCompilation
@@ -12,6 +14,8 @@ import com.tschuchort.compiletesting.SourceFile
 import com.tschuchort.compiletesting.configureKsp
 import java.io.File
 import java.net.URLClassLoader
+import java.util.logging.Level
+import java.util.logging.Logger
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertContains
@@ -19,6 +23,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotSame
 import kotlin.test.assertSame
+import net.kyori.adventure.text.logger.slf4j.ComponentLogger
+import org.bukkit.plugin.Plugin
 import org.jetbrains.kotlin.compiler.plugin.ExperimentalCompilerApi
 import org.junit.jupiter.api.io.TempDir
 
@@ -285,6 +291,106 @@ class DependencyInjectionIntegrationTest {
 
         assertSame(Recorder.instanceOf("FastEngine"), Recorder.instanceOf("Car").field("engine"), "@Fast selects the bean named fast")
         assertSame(Recorder.instanceOf("SteadyEngine"), Recorder.instanceOf("Bus").field("engine"), "@Preferred makes its bean primary")
+    }
+
+    @Test
+    fun `every plugin injects its own logger, component logger and plugin, and a prototype made for another plugin gets the consumer's`() {
+        val owner = compilePlugin(
+            "Owner",
+            "com.example.owner.OwnerPlugin",
+            """
+            package com.example.owner
+
+            import com.github.marcoral.versatia.VersatiaPlugin
+            import com.github.marcoral.versatia.di.ExposePrototype
+            import com.github.marcoral.versatia.di.LocalBean
+            import com.github.marcoral.versatia.testsupport.Recorder
+            import java.util.logging.Logger
+            import net.kyori.adventure.text.logger.slf4j.ComponentLogger
+            import org.bukkit.plugin.Plugin
+
+            class OwnerPlugin : VersatiaPlugin()
+
+            @LocalBean
+            class Shop(logger: Logger) {
+                init { logger.info("Shop open") }
+            }
+
+            @ExposePrototype
+            class Greeter(val logger: Logger, val componentLogger: ComponentLogger, val plugin: Plugin) {
+                init { Recorder.record("Greeter", this) }
+                fun greet() = logger.info("Hello from ${'$'}{plugin.pluginMeta.name}")
+            }
+            """.trimIndent(),
+        )
+        val consumer = compilePlugin(
+            "Consumer",
+            "com.example.consumer.ConsumerPlugin",
+            """
+            package com.example.consumer
+
+            import com.example.owner.Greeter
+            import com.github.marcoral.versatia.VersatiaPlugin
+            import com.github.marcoral.versatia.di.LocalBean
+
+            class ConsumerPlugin : VersatiaPlugin()
+
+            @LocalBean
+            class Desk(greeter: Greeter) {
+                init { greeter.greet() }
+            }
+            """.trimIndent(),
+            dependsOn = owner,
+        )
+        val quiet = compilePlugin(
+            "Quiet",
+            "com.example.quiet.QuietPlugin",
+            """
+            package com.example.quiet
+
+            import com.example.owner.Greeter
+            import com.github.marcoral.versatia.VersatiaPlugin
+            import com.github.marcoral.versatia.di.LocalBean
+            import com.github.marcoral.versatia.testsupport.Recorder
+            import java.util.logging.Logger
+
+            class QuietPlugin : VersatiaPlugin()
+
+            @LocalBean
+            class QuietLogger : Logger("quiet", null)
+
+            @LocalBean
+            class Booth(val greeter: Greeter, val logger: Logger) {
+                init { Recorder.record("Booth", this) }
+            }
+            """.trimIndent(),
+            dependsOn = owner,
+        )
+        val ownerLoader = pluginClassLoader(owner, Recorder::class.java.classLoader)
+        val consumerLoader = pluginClassLoader(consumer, ownerLoader)
+        val quietLoader = pluginClassLoader(quiet, ownerLoader)
+        val ownerPlugin = fakePlugin("Owner", ownerLoader, main = "com.example.owner.OwnerPlugin")
+        val consumerPlugin = fakePlugin("Consumer", consumerLoader, main = "com.example.consumer.ConsumerPlugin")
+
+        ownerPlugin.captureLog().use { ownerLog ->
+            consumerPlugin.captureLog().use { consumerLog ->
+                enhance("com.example.owner.OwnerPlugin", testContext("Owner", states, ownerLoader, plugin = ownerPlugin))
+                assertEquals(listOf("Shop open"), ownerLog.messages(Level.INFO), "a bean logs through its plugin's logger")
+
+                enhance("com.example.consumer.ConsumerPlugin", testContext("Consumer", states, consumerLoader, plugin = consumerPlugin))
+                assertEquals(listOf("Hello from Consumer"), consumerLog.messages(Level.INFO), "the prototype made for Consumer logs as Consumer")
+                assertEquals(listOf("Shop open"), ownerLog.messages(Level.INFO))
+            }
+        }
+        val forConsumer = Recorder.events.last { it.first == "Greeter" }.second
+        assertEquals("test.Consumer", (forConsumer.field("componentLogger") as ComponentLogger).name)
+        assertEquals("Consumer", (forConsumer.field("plugin") as Plugin).name)
+
+        enhance("com.example.quiet.QuietPlugin", testContext("Quiet", states, quietLoader, plugin = fakePlugin("Quiet", quietLoader, main = "com.example.quiet.QuietPlugin")))
+        val booth = Recorder.instanceOf("Booth")
+        val quietLogger = booth.field("logger") as Logger
+        assertEquals("quiet", quietLogger.name, "a local Logger bean wins over the default one")
+        assertSame(quietLogger, booth.field("greeter").field("logger"), "a prototype made for Quiet resolves Logger by Quiet's rules")
     }
 
     private fun Any.field(name: String) = javaClass.getDeclaredField(name).apply { isAccessible = true }.get(this)!!

@@ -88,10 +88,14 @@ internal class TickLoop(val isServerThread: () -> Boolean, var closeTimeout: Dur
         newTimers += timer
     }
 
-    /** Cancels the lane's pending tick timers and drops its rechecks; server thread. */
+    /**
+     * Cancels the lane's pending tick timers and drops them at once rather than when due, since a
+     * timer holds its coroutine and with it the plugin's classes; drops its rechecks too. Server thread.
+     */
     fun abandon(lane: Lane) {
         val reason = disabling(lane)
         (timers.toList() + newTimers.toList()).filter { it.lane === lane }.forEach { it.continuation.cancel(reason) }
+        timers.removeIf { timer -> (timer.lane === lane).also { if (it && timer.cancelled) cancelledTimers.decrementAndGet() } }
         lane.rechecks.clear()
     }
 

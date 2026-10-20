@@ -4,6 +4,7 @@ import com.github.marcoral.versatia.testsupport.FakeScheduler
 import com.github.marcoral.versatia.testsupport.captureLog
 import com.github.marcoral.versatia.testsupport.fakePlugin
 import com.github.marcoral.versatia.testsupport.heartbeatUntil
+import java.lang.ref.WeakReference
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -18,6 +19,8 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.TimeSource
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -83,6 +86,28 @@ class TickLoopTest {
 
         assertFalse(resumed)
         assertTrue(job.isCancelled && job.isCompleted)
+    }
+
+    @Test
+    fun `a disabled plugin's far-off timer no longer holds its coroutine`() {
+        val held = launchHolding()
+        loop.heartbeat()
+        scope.stop()
+        loop.heartbeat()
+
+        val deadline = TimeSource.Monotonic.markNow() + 10.seconds
+        while (held.get() != null && !deadline.hasPassedNow()) System.gc()
+        assertNull(held.get(), "the timer of a cancelled coroutine still references what the coroutine captured")
+    }
+
+    /** A coroutine waiting a long time that captures an object; only a weak reference to it leaves this frame. */
+    private fun launchHolding(): WeakReference<Any> {
+        val captured = Any()
+        scope.launch {
+            delayTicks(1_000_000)
+            println(captured)
+        }
+        return WeakReference(captured)
     }
 
     @Test

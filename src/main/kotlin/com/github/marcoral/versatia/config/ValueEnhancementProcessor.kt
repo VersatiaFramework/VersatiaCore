@@ -14,6 +14,7 @@ import com.github.marcoral.versatia.di.ExposedBeanRegistry
 import com.github.marcoral.versatia.engine.descriptor.EnhancedElement
 import com.github.marcoral.versatia.engine.descriptor.MemberOwner
 import com.github.marcoral.versatia.engine.descriptor.PropertyTarget
+import com.github.marcoral.versatia.engine.descriptor.SubclassInstances
 import com.github.marcoral.versatia.resources.ExtractResources
 import com.github.marcoral.versatia.util.config.ConfigurationValueException
 import com.github.marcoral.versatia.util.config.loadYamlOrThrow
@@ -31,7 +32,11 @@ import org.bukkit.configuration.ConfigurationSection
  * cell for a `PreviousValueTracking`, and sets the body properties right after the constructor,
  * so every instance, however late it is made, starts with the values current then; a bean
  * constructor sees the values of the main class, of objects and of the beans it takes. At a
- * reload the values replace the kept ones and are set on every live instance. The bean classes are
+ * reload the values replace the kept ones and are set on every live instance. A class a subclass
+ * enhancement creates without being a bean, such as a plain Listener or BackgroundTask, is handled
+ * like a bean with its single instance in `SubclassInstances`: made when the plugin has been
+ * enhanced, so before the listener is registered or the task first runs, and set at a reload
+ * before the tasks restart. The bean classes are
  * marked in the exposed-bean registry, so a reload of the plugin reloads the plugins holding them,
  * and only those. Every receiver is resolved before the first property is set, and a file path
  * that leaves the data folder is refused. See docs/runtime.md.
@@ -46,14 +51,21 @@ class ValueEnhancementProcessor : EnhancementProcessor {
         val files = bindings.map { it.file }.distinct().associateWith { load(it, context) }
         val reader = ValueReader(context.classLoader)
         val values = bindings.map { it to read(it, reader, files.getValue(it.file), context) }
-        val (beanValues, otherValues) = values.partition { (binding, _) -> binding.target.owner == MemberOwner.INSTANCE }
+        val (beanValues, rest) = values.partition { (binding, _) -> binding.target.owner == MemberOwner.INSTANCE }
+        val (createdValues, otherValues) = rest.partition { (binding, _) -> binding.target.owner == MemberOwner.SUBCLASS_INSTANCE }
         val starting = context.event == LifecycleEvent.START
+        val created = SubclassInstances.of(context)
         val assignments = otherValues.map { (binding, value) -> Assignment(binding, context.receiverOf(binding.target), value) } +
-            if (starting) emptyList() else beanValues.flatMap { (binding, value) -> instancesOf(binding, context).map { Assignment(binding, it, value) } }
+            if (starting) emptyList()
+            else beanValues.flatMap { (binding, value) -> instancesOf(binding, context).map { Assignment(binding, it, value) } } +
+                createdValues.mapNotNull { (binding, value) -> created.existing(binding.target.className)?.let { Assignment(binding, it, value) } }
         val current = context.state.getOrPut(CURRENT) { HashMap() }
         values.forEach { (binding, value) -> current[binding.description] = value }
         assignments.forEach { assign(it.binding, it.receiver, it.value, context) }
-        if (starting) prepare(beanValues.map { it.first }, current, context)
+        if (starting) {
+            prepare(beanValues.map { it.first }, current, context)
+            prepare(createdValues.map { it.first }, current, created, context)
+        }
         context.debug { "set ${values.size} values, ${bindings.groupBy({ it.file }, { it.key }).entries.joinToString("; ") { (file, keys) -> "$file: ${keys.joinToString()}" }}" }
     }
 
@@ -104,14 +116,26 @@ class ValueEnhancementProcessor : EnhancementProcessor {
         val exposed = ExposedBeanRegistry.of(context)
         bindings.map { it.target.className }.distinct().forEach { exposed.followOwnerReloads(context.plugin.name, it) }
         val (passed, assigned) = bindings.partition { it.target.constructorParameter != null }
-        for (binding in passed) beans.supply(binding.target.className, binding.target.constructorParameter!!) {
-            val value = current[binding.description]
-            if (binding.target.type.name == TRACKING) PreviousValueTracking<Any?>().also { it.value = value } else value
-        }
+        for (binding in passed) beans.supply(binding.target.className, binding.target.constructorParameter!!) { argumentOf(binding, current) }
         for ((className, properties) in assigned.groupBy { it.target.className }) {
             val prepared = beans.onInstanceCreated(className) { instance -> properties.forEach { assign(it, instance, current[it.description], context) } }
             if (!prepared) throw noBean(properties.first(), context)
         }
+    }
+
+    /** The same for the classes a subclass enhancement creates, whose single instance is made when the plugin has been enhanced. */
+    private fun prepare(bindings: List<Binding>, current: Map<String, Any?>, created: SubclassInstances, context: EnhancementContext) {
+        val (passed, assigned) = bindings.partition { it.target.constructorParameter != null }
+        for (binding in passed) if (!created.supply(binding.target.className, binding.target.constructorParameter!!) { argumentOf(binding, current) })
+            throw context.failure("${binding.target.className} was created before its @Value constructor property ${binding.description} was read; a processor creating it must wait for onPluginEnhanced")
+        for ((className, properties) in assigned.groupBy { it.target.className })
+            created.onInstanceCreated(className) { instance -> properties.forEach { assign(it, instance, current[it.description], context) } }
+    }
+
+    /** The argument of a constructor property: its current value, or a new cell holding it for a `PreviousValueTracking`. */
+    private fun argumentOf(binding: Binding, current: Map<String, Any?>): Any? {
+        val value = current[binding.description]
+        return if (binding.target.type.name == TRACKING) PreviousValueTracking<Any?>().also { it.value = value } else value
     }
 
     private fun instancesOf(binding: Binding, context: EnhancementContext) =
@@ -135,7 +159,6 @@ class ValueEnhancementProcessor : EnhancementProcessor {
     private companion object {
         val NO_MAPPER: String = NoMapper::class.java.name
         val TRACKING = PreviousValueTracking::class.qualifiedName
-
 
         /** The values last read, by property: what an instance made later starts with. */
         val CURRENT = StateKey<MutableMap<String, Any?>>("Value.current")

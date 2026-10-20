@@ -44,7 +44,7 @@ lives in its processors; the classes of the root package know none of them.
    `PluginRegistry`, under its friendly name, the `@FriendlyName` attribute recorded on the
    `PluginTarget` or the plugin's name, in start order. `PluginRegistryBean` (`@ExposeSingleton`,
    delegating to that registry) is part of VersatiaCore's own descriptor, so every plugin can
-   inject a `PluginRegistry`.
+   inject a `PluginRegistry`; see [Beans every plugin has](#beans-every-plugin-has) for the others.
    A name another running plugin uses is an `EnhancementException`, so the plugin stays disabled.
    A registered plugin is a running one. `reload(plugin)` runs the `RELOAD` event for a registered
    plugin and keeps the state; for any other it throws `Plugin X is not running`, from inside the
@@ -154,7 +154,7 @@ is logged by VersatiaCore at `INFO`, as `[debug] <plugin> <EVENT>: <step>`:
 
 | Step | Written by | Line |
 |---|---|---|
-| descriptor | `PluginEnhancer` | `descriptor format 1.4, 12 elements, 7 for this event` |
+| descriptor | `PluginEnhancer` | `descriptor format 1.5, 12 elements, 7 for this event` |
 | skipped element | `PluginEnhancer` | `skipped VaultBridge: @ConditionalOnPlugin(Vault) is not met` (at every event, unlike the `INFO` line at start) |
 | dispatch | `PluginEnhancer` | `AutoInvokeEnhancementProcessor receives Reports.report(), Shop.open()` |
 | beans | `PluginBeanSession` | `created 3 beans: "plugin" (...), ...` and `exposes "prices" (...) as exposed prototype` |
@@ -211,7 +211,7 @@ VersatiaCore itself is in the registry, so a full reload includes it: it restore
 
 `/versatia info [plugin]`, behind `versatia.core.command.info` (default op), is read-only.
 Without an argument it lists the running Versatia plugins, one line each:
-`shop (Shop 1.2.0), descriptor format 1.4`. With a friendly name it adds the plugin's beans
+`shop (Shop 1.2.0), descriptor format 1.5`. With a friendly name it adds the plugin's beans
 (`  "prices" com.example.PriceList, exposed prototype`), `Exposed beans used by others: "prices" by
 Auction`, `Reloads cascade to: Auction` and `@Value files: config.yml`, each `none` when empty.
 `PluginInfo` gathers the lines without CommandAPI types: the registry, the plugin's bean session
@@ -328,6 +328,31 @@ prototype once; the factory then builds an instance for a consumer from:
 The factory receives the consumer's resolution as a function, so a prototype built from other
 prototypes (a `Messages` taking a `Text`, say) forms a chain made entirely for the consumer.
 
+### Beans every plugin has
+
+Besides its own main class (the bean `plugin`), every plugin can inject the beans VersatiaCore's
+own descriptor exposes, which take nothing but the plugin they are made for. They are ordinary
+exposed beans: nothing in KSP or the pipeline knows their types, and the resolution rules above
+apply to them unchanged. A class exposing a value of the plugin is named `Plugin<Type>Bean` after
+the type it is injected as.
+
+| Class (root package unless noted) | Scope            | Injected as                                  | Delegates to            |
+|-----------------------------------|------------------|----------------------------------------------|-------------------------|
+| `PluginRegistryBean`              | exposed singleton | `PluginRegistry`                            | the runtime's registry  |
+| `task.PluginScopeBean`            | exposed prototype | `PluginScope` (and `CoroutineScope`)        | a scope of its own, see [`PluginScopeBean`](#pluginscopebean) |
+| `PluginLoggerBean`                | exposed prototype | `java.util.logging.Logger`                  | `plugin.logger`         |
+| `PluginComponentLoggerBean`       | exposed prototype | `ComponentLogger` (and `org.slf4j.Logger`)  | `plugin.componentLogger` |
+
+Each prototype takes the consuming `Plugin`, so a module prototype that takes a `Logger` gets the
+logger of the plugin it is made for (row "a prototype" of the table above), and the consumer's
+own rules decide: a consumer with a local `Logger` bean gives that one. A local bean of the same
+type wins over these, as over any exposed bean; two local ones need `@Primary` or `@Qualifier`.
+The injected instance is not `plugin.logger` itself but a delegate: `PluginLoggerBean` extends
+`Logger` under the plugin logger's name and forwards records, level, handlers, filter and
+`useParentHandlers`, so it logs exactly as the plugin does; `PluginComponentLoggerBean` delegates
+every interface method. `Server`, the scheduler, the data folder and the plugin's metadata are not
+beans: they go through `VersatiaEngine` or the plugin (`plugin.pluginMeta`).
+
 ### Lifetime
 
 A plugin's bean session, and the beans it exposed, live exactly as long as the plugin: the session
@@ -388,7 +413,14 @@ objects, its own constructor values and those of the beans it takes, and the pla
 own body. At a reload the kept values are replaced and set on every instance `instancesOf` lists,
 then the runtime's cascade reloads the consumers holding them (the processor marks these
 classes with `ExposedBeanRegistry.followOwnerReloads` at start), which run their `PLUGIN_RELOAD_OR_START`
-functions with the new values. The processor loads every file
+functions with the new values. A `SUBCLASS_INSTANCE` property, of a plain `Listener` or
+`BackgroundTask`, goes the same way through `SubclassInstances` instead of the bean session: at
+start a constructor property is supplied and the body properties registered with
+`onInstanceCreated` (`X was created before its @Value constructor property X.p was read; a
+processor creating it must wait for onPluginEnhanced` when a processor made the instance in
+`process` already); at a reload the values are set on the instance when it exists, before the
+completion action restarts the tasks. Such an instance serves its own plugin only, so no cascade
+follows. The processor loads every file
 the elements name once (`loadYamlOrThrow`, relative to the data folder; a path that leaves the
 data folder once normalized is refused with `Plugin X: the @Value file "<file>" lies outside the
 data folder; ...`, which the compile-time step already rules out for paths written in the source),
@@ -443,9 +475,13 @@ start event, so after the bean session created the beans, it obtains an instance
 `BeanResolver` has one and otherwise a new instance created through the element's instantiator
 with the constructor parameters resolved by the `BeanResolver` (an `EnhancementException` when the
 plugin has no beans but the constructor needs some). The instance comes from
-`engine.descriptor.subclassInstanceOf`, which keeps a created instance per plugin and class in the
-plugin state, so a plain class that is a `Listener` and a `BackgroundTask` is created once and
-shared by both processors. Each instance is registered through
+`engine.descriptor.subclassInstanceOf`, which keeps a created instance per plugin and class in
+`SubclassInstances` in the plugin state, so a plain class that is a `Listener` and a
+`BackgroundTask` is created once and shared by both processors. A constructor parameter whose
+`suppliedBy` names a processor takes the argument that processor supplied (`X expects
+ValueEnhancementProcessor to supply parameter N, which it has not` otherwise), and the actions
+registered with `onInstanceCreated` run right after the constructor, before the instance is
+returned, so before it is registered or first runs. Each instance is registered through
 `plugin.server.pluginManager.registerEvents`; Bukkit unregisters them on disable.
 
 ## Tasks (`task`)
@@ -478,7 +514,8 @@ threw while running on the server thread`; the heartbeat goes on.
 - `schedule` (any thread) registers a timer due `tick + max(ticks, 1)`, refused with a
   `CancellationException` once the loop stopped or the lane is stopping (`Plugin X is being
   disabled; no tick passes for it any more`).
-- `abandon` cancels the lane's pending timers and drops its rechecks; `drain` runs the lane's
+- `abandon` cancels the lane's pending timers and removes them from the queue at once, since a
+  timer holds its coroutine and through it the plugin's classes, and drops its rechecks; `drain` runs the lane's
   blocks until a condition holds or `closeTimeout` (5 s) passed, parking 1 ms when the queue is
   empty.
 - `stop` (VersatiaCore's own disable) cancels every lane, abandons them, runs what comes back until
@@ -515,8 +552,11 @@ recheck posted however many events fire. With `immediately` it evaluates in the 
 server thread, and elsewhere warns once per lane and event type and posts. `recheck()` assigns
 `check()` in place on the server thread (an exception reaches the caller) and posts otherwise.
 `evaluate()`, used for triggers and posts, keeps the last value on an exception and logs `A
-condition check failed; the condition keeps its last value, <value>`. `close()` unregisters the
-listener.
+condition check failed; the condition keeps its last value, <value>`. `create` links the condition
+to its owner job with `invokeOnCompletion`; `close()`, from the author or that link, runs once
+(an `AtomicBoolean`), unregisters the listener and disposes the link, so a condition closed early
+leaves no handler on the plugin's job. A closed condition ignores `recheck()` and drops a posted
+recheck.
 
 ### `PluginScopeBean`
 
@@ -603,7 +643,10 @@ functions.
   failures), tracked cells with their previous value, and reflective setters for private and
   inline-class properties, a file outside the data folder and an unusable mapper;
   `ValueReaderTest` checks that the reader's type maps equal `ValueTypes` and reads every scalar
-  type alone and in a list, a nested enum and malformed values; `ValueIntegrationTest` compiles a plugin with `@Value` properties and runs it at start and reload.
+  type alone and in a list, a nested enum and malformed values; `ValueIntegrationTest` compiles a plugin with `@Value` properties and runs it at start and reload;
+  `SubclassValueIntegrationTest` compiles a plain `BackgroundTask` with body and constructor
+  values and a plain `Listener` with a value, and checks them before the first run and the
+  registration, after a reload and after a failed reload.
 - `BeanLoadingTest` also covers optional constructor parameters (local, exposed and default) and
   supplied ones with their two errors; `ConstructorParameterIntegrationTest` compiles plugins with a
   `@Value` constructor `var` and tracking parameter (start, reload, failed reload), a constructor
@@ -620,7 +663,7 @@ functions.
   checks that debug mode writes nothing while off, logs each step (never a value) while on, and
   that `PluginInfo` reports the format, beans, consumers, cascade and `@Value` files.
 - `TickLoopTest` drives the `TickLoop` by hand on the test thread: tick timers, `delayTicks(0)`,
-  cancelled and cross-thread timers, `yield`, the order blocks, rechecks, timers, a throwing block
+  cancelled and cross-thread timers, a disabled plugin's timer released at once, `yield`, the order blocks, rechecks, timers, a throwing block
   or recheck, the dispatcher, `stop` with the hand-off to `Dispatchers.IO`, and the `ServerTicker`
   with its warning. `PluginScopeBeanTest` covers launching on and off the server thread, the return
   from `Dispatchers.IO`, failures named by `CoroutineName`, the stop with its `finally` blocks,
@@ -638,10 +681,14 @@ functions.
   `InstantiatorTest` covers the reflective instantiators of the descriptor.
 - `DescriptorLoaderTest` and `DescriptorCompatibilityTest` cover lookup by main class and the
   format-version rule; `CoreDescriptorTest` loads VersatiaCore's own generated descriptor, loads
-  every processor it names and checks that the command stays conditional on CommandAPI.
-- `DependencyInjectionIntegrationTest` is end to end: it compiles three sample plugins with the
+  every processor it names, checks that it exposes the beans every plugin has and that the command
+  stays conditional on CommandAPI; `PluginLoggerBeanTest` checks that the injected `Logger` logs,
+  filters by level and lists handlers exactly as `plugin.logger`.
+- `DependencyInjectionIntegrationTest` is end to end: it compiles sample plugins with the
   real VersatiaAPI KSP processor (`kotlin-compile-testing`, `dev.zacsweers.kctfork`), builds
   class loaders that delegate the way Bukkit's plugin loaders do, and runs the runtime over the
   generated descriptors at start, reload and stop. Sample beans and functions report to a
-  `Recorder` on the test classpath. Nothing in these tests needs a running server; the command
+  `Recorder` on the test classpath. It also checks that a bean logs through its plugin's `Logger`
+  and that a prototype made for another plugin receives that plugin's `Logger`, `ComponentLogger`
+  and `Plugin`, or its own local `Logger` bean when it has one. Nothing in these tests needs a running server; the command
   needs one and is not unit-tested.

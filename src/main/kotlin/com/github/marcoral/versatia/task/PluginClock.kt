@@ -14,7 +14,7 @@ internal class PluginClock(private val lane: Lane, private val loop: TickLoop) :
     override suspend fun delayTicks(ticks: Long) = suspendCancellableCoroutine { loop.schedule(lane, ticks, it) }
 
     override fun condition(triggers: List<RecheckTrigger>, check: () -> Boolean, owner: Job): Condition =
-        PluginCondition.create(lane, loop, triggers, check).also { condition -> owner.invokeOnCompletion { condition.close() } }
+        PluginCondition.create(lane, loop, triggers, owner, check)
 
     override suspend fun reportFailedRun(failure: Throwable) =
         lane.plugin.logSevere("${currentCoroutineContext().label()}: a repeated run failed; it runs again on schedule, and the same failure is not logged again until a run succeeds", failure)

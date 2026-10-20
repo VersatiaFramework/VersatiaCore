@@ -12,6 +12,7 @@ import com.github.marcoral.versatia.engine.descriptor.VersatiaPluginDescriptor
 import java.io.File
 import java.lang.reflect.Proxy
 import java.util.logging.Logger
+import net.kyori.adventure.text.logger.slf4j.ComponentLogger
 import org.bukkit.Server
 import org.bukkit.event.Event
 import org.bukkit.event.EventPriority
@@ -39,8 +40,9 @@ object Recorder {
 }
 
 /**
- * A `Plugin` that knows its name, logger, data folder, main class and a server whose plugin
- * manager records listener registrations in [registrations], registers the executors of
+ * A `Plugin` that knows its name, logger, component logger (which answers only its name), data
+ * folder, main class and a server whose plugin manager records listener registrations in
+ * [registrations], registers the executors of
  * `registerEvent` with the event's real `HandlerList`, delivers `callEvent` to them and reports
  * [enabledPlugins] as enabled, and nothing else. A real `JavaPlugin` cannot exist outside a Bukkit
  * plugin class loader. The proxy class is defined in [classLoader], so `plugin.javaClass.classLoader`
@@ -61,12 +63,16 @@ fun fakePlugin(
     primaryThread: () -> Boolean = Thread.currentThread().let { creator -> { Thread.currentThread() === creator } },
 ): Plugin {
     val logger = Logger.getLogger("test.$name")
+    val componentLogger = Proxy.newProxyInstance(classLoader, arrayOf(ComponentLogger::class.java)) { _, method, _ ->
+        if (method.name == "getName") "test.$name" else throw UnsupportedOperationException("FakePlugin's ComponentLogger does not support ${method.name}")
+    } as ComponentLogger
     val server = fakeServer(registrations ?: mutableListOf(), enabledPlugins, installedPlugins, primaryThread)
     val interfaces = if (listener) arrayOf(Plugin::class.java, Listener::class.java) else arrayOf(Plugin::class.java)
     return Proxy.newProxyInstance(classLoader, interfaces) { proxy, method, args ->
         when (method.name) {
             "getName" -> name
             "getLogger" -> logger
+            "getComponentLogger" -> componentLogger
             "getDataFolder" -> dataFolder ?: throw UnsupportedOperationException("FakePlugin $name has no data folder")
             "getDescription", "getPluginMeta" -> PluginDescriptionFile(name, "0.0.1", main ?: throw UnsupportedOperationException("FakePlugin $name has no main class"))
             "getServer" -> server
