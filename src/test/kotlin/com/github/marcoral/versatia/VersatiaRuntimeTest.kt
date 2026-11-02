@@ -2,6 +2,7 @@ package com.github.marcoral.versatia
 
 import com.github.marcoral.versatia.di.ExposedBean
 import com.github.marcoral.versatia.di.ExposedBeanRegistry
+import com.github.marcoral.versatia.engine.command.CommandText.plain
 import com.github.marcoral.versatia.sample.Ticker
 import com.github.marcoral.versatia.testsupport.Recorder
 import com.github.marcoral.versatia.testsupport.fakePlugin
@@ -195,7 +196,7 @@ class VersatiaRuntimeTest {
 
         assertEquals(listOf("ticker" to null, "Plain" to "ticker"), outcomes.map { it.name to it.cause })
         assertEquals(listOf("Ticker.tick"), Recorder.names(), "the way back to ticker does not reload it again")
-        assertEquals("Reloaded ticker; then Plain, which uses beans of ticker.", ReloadOutcome.summary(outcomes))
+        assertEquals("Reloaded ticker; then Plain, which uses beans of ticker.", ReloadOutcome.summary(outcomes)?.plain())
     }
 
     @Test
@@ -213,7 +214,30 @@ class VersatiaRuntimeTest {
         assertEquals(listOf(null, "tick failed"), outcomes.map { it.failure?.let { e -> generateSequence(e) { c -> c.cause }.last().message } })
         assertContains(outcomes[1].message!!, "ticker failed to reload after Plain, whose beans it uses: ")
         assertContains(outcomes[1].message!!, "Plain stays reloaded; fix ticker and reload it")
-        assertEquals("Reloaded Plain.", ReloadOutcome.summary(outcomes))
+        assertEquals("Reloaded Plain.", ReloadOutcome.summary(outcomes)?.plain())
+    }
+
+    @Test
+    fun `the friendly name is known while the plugin starts and freed when its start fails`() {
+        val ticker = fakePlugin("TickerPlugin", main = tickerMain)
+        var seen: String? = null
+        var running: Boolean? = null
+        Ticker.onStart = {
+            seen = runtime.registry.friendlyNameOf(ticker)
+            running = "ticker" in runtime.registry.plugins
+            error("start failed")
+        }
+        try {
+            assertFailsWith<EnhancementException> { runtime.enhance(ticker) }
+        } finally {
+            Ticker.onStart = {}
+        }
+
+        assertEquals("ticker", seen, "a module's prototype reloaded during the start reads the friendly name")
+        assertEquals(false, running, "a starting plugin is not listed as running")
+        assertNull(runtime.registry.friendlyNameOf(ticker))
+        runtime.enhance(fakePlugin("OtherTicker", main = tickerMain))
+        assertEquals(listOf("ticker"), runtime.registry.friendlyNames.toList(), "the name was freed for the next plugin")
     }
 
     @Test

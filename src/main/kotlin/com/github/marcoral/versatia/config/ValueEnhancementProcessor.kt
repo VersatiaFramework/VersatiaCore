@@ -82,7 +82,7 @@ class ValueEnhancementProcessor : EnhancementProcessor {
             throw context.failure("the @Value file \"$file\" lies outside the data folder; name a path relative to it, such as config.yml")
         if (!path.isFile) missingFileMessage(file, context).let { throw context.failure(it, ConfigurationValueException(it)) }
         return try {
-            loadYamlOrThrow(path)
+            loadYamlOrThrow(path, context.plugin)
         } catch (e: Exception) {
             throw context.failure("$file could not be read", e)
         }

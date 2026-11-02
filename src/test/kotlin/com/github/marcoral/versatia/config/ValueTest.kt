@@ -30,6 +30,7 @@ import com.github.marcoral.versatia.testsupport.testContext
 import com.github.marcoral.versatia.util.config.getIntOrThrow
 import com.github.marcoral.versatia.util.config.getLongOrThrow
 import com.github.marcoral.versatia.util.type.Percent
+import com.github.marcoral.versatia.util.type.Secret
 import java.io.File
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -54,10 +55,13 @@ object Limits {
     var range: Range? = null
     private var secret = 0
     private var rate = Percent.of(0.0)
+    private var token = Secret.EMPTY
 
     fun secret() = secret
 
     fun rate() = rate
+
+    fun token() = token
 
     fun reset() {
         max = 0
@@ -68,6 +72,7 @@ object Limits {
         range = null
         secret = 0
         rate = Percent.of(0.0)
+        token = Secret.EMPTY
     }
 }
 
@@ -354,6 +359,26 @@ class ValueTest {
         assertEquals(Percent.of(12.5), Limits.rate())
         assertEquals(Percent.of(8.0), Limits.tax)
         assertEquals(Percent.of(3.0), shop().tax())
+    }
+
+    @Test
+    fun `reads a secret through its references and keeps it out of the messages`() {
+        val tokenFile = dataFolder.resolve("token.txt").apply { writeText("from-a-file\n") }
+        file("config.yml", "token: \${file:${tokenFile.absolutePath.replace('\\', '/')}}\n")
+        val token = value<Limits>("token", MemberOwner.OBJECT, TypeReference(Secret::class.qualifiedName!!), Setter.Reflective(Limits::class.java.name, "token"))
+        val elements = descriptor(token)
+
+        enhancer.enhance(elements, context())
+        assertEquals("from-a-file", Limits.token().reveal())
+
+        file("config.yml", "token: \${env:VERSATIA_TEST_UNSET}\n")
+        val error = assertFailsWith<EnhancementException> { enhancer.enhance(elements, context(LifecycleEvent.RELOAD)) }
+        assertEquals(
+            "Plugin Values: ${Limits::class.qualifiedName}.token could not be read from config.yml: " +
+                "Value at \"token\" uses \${env:VERSATIA_TEST_UNSET}, which is not set; set that environment variable for the server, or write the value instead",
+            error.message,
+        )
+        assertEquals("from-a-file", Limits.token().reveal(), "a failed reload keeps the secret")
     }
 
     @Test

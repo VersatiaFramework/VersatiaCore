@@ -3,6 +3,7 @@ package com.github.marcoral.versatia.config
 import com.github.marcoral.versatia.engine.descriptor.TypeReference
 import com.github.marcoral.versatia.util.config.ConfigurationValueException
 import com.github.marcoral.versatia.util.type.Percent
+import com.github.marcoral.versatia.util.type.Secret
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -39,6 +40,7 @@ class ValueReaderTest {
             "kotlin.String" to ("text" to "text"),
             Percent::class.qualifiedName!! to ("50%" to Percent.of(50.0)),
             "kotlin.time.Duration" to ("1h 30m" to 90.minutes),
+            Secret::class.qualifiedName!! to ("hunter2" to Secret("hunter2")),
         )
         assertEquals(ValueTypes.SCALARS, samples.keys)
         for ((name, sample) in samples) {

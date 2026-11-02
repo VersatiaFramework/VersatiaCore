@@ -154,7 +154,7 @@ is logged by VersatiaCore at `INFO`, as `[debug] <plugin> <EVENT>: <step>`:
 
 | Step | Written by | Line |
 |---|---|---|
-| descriptor | `PluginEnhancer` | `descriptor format 1.5, 12 elements, 7 for this event` |
+| descriptor | `PluginEnhancer` | `descriptor format 1.6, 12 elements, 7 for this event` |
 | skipped element | `PluginEnhancer` | `skipped VaultBridge: @ConditionalOnPlugin(Vault) is not met` (at every event, unlike the `INFO` line at start) |
 | dispatch | `PluginEnhancer` | `AutoInvokeEnhancementProcessor receives Reports.report(), Shop.open()` |
 | beans | `PluginBeanSession` | `created 3 beans: "plugin" (...), ...` and `exposes "prices" (...) as exposed prototype` |
@@ -211,7 +211,7 @@ VersatiaCore itself is in the registry, so a full reload includes it: it restore
 
 `/versatia info [plugin]`, behind `versatia.core.command.info` (default op), is read-only.
 Without an argument it lists the running Versatia plugins, one line each:
-`shop (Shop 1.2.0), descriptor format 1.5`. With a friendly name it adds the plugin's beans
+`shop (Shop 1.2.0), descriptor format 1.6`. With a friendly name it adds the plugin's beans
 (`  "prices" com.example.PriceList, exposed prototype`), `Exposed beans used by others: "prices" by
 Auction`, `Reloads cascade to: Auction` and `@Value files: config.yml`, each `none` when empty.
 `PluginInfo` gathers the lines without CommandAPI types: the registry, the plugin's bean session
@@ -426,7 +426,8 @@ data folder once normalized is refused with `Plugin X: the @Value file "<file>" 
 data folder; ...`, which the compile-time step already rules out for paths written in the source),
 reads every value, resolves every receiver and every bean instance, and only then assigns them, so
 a broken file or a missing receiver changes nothing. `ValueReader` turns the recorded `TypeReference` into a read: the scalar and
-Bukkit types map to the `OrThrow` getters of `util.config`, an enum is loaded through the plugin's
+Bukkit types map to the `OrThrow` getters of `util.config` (`getSecretOrThrow` resolves the
+`${env:NAME}` and `${file:PATH}` of a `Secret` there, at every read), an enum is loaded through the plugin's
 class loader (trying the binary names a nested class may have) and matched by constant name
 ignoring case, `List` and `Set` use the strict list getters (`getStringListOrThrow` and the like,
 so a scalar where a list belongs or an element of the wrong type is an error), `Map` reads a
@@ -490,6 +491,13 @@ The coroutines of every plugin run on one loop on the server thread. VersatiaAPI
 defines `BackgroundTask`, `PluginScope`, `Condition` and the helpers; this package runs them.
 
 ### `TickLoop` and `ServerTicker`
+
+`PluginScopeBean.perPlayer` makes a `PluginPlayerValues`: a `ConcurrentHashMap` by UUID, a
+`PlayerQuitEvent` listener at MONITOR (after the plugin's own handlers) that removes the value at
+once or, with `keepAfterQuit` (rounded up to ticks), in a coroutine of the scope waiting
+`delayTicks`, and a `PlayerJoinEvent` listener at LOWEST that cancels that coroutine. When the
+scope's job completes at the stop, both listeners are unregistered and the map is cleared.
+`PlayerValuesTest` covers the quit, the delayed removal cancelled by a join, and the stop.
 
 `ServerTicker` is a `@LocalBean` of VersatiaCore. Its `@AutoInvoke(PLUGIN_START_ONLY)` function
 starts one Bukkit timer, `runTaskTimer(periodTicks = 1)`, whose every run is `TickLoop.heartbeat()`;
@@ -641,7 +649,8 @@ functions.
   beans exist, values set before reloadable beans and functions, reload and a broken file leaving values untouched, nullable and missing values, named
   and missing files, enums, lists, sets and maps, mappers (objects, nested objects, classes, their
   failures), tracked cells with their previous value, and reflective setters for private and
-  inline-class properties, a file outside the data folder and an unusable mapper;
+  inline-class properties, a secret read through a file reference whose unset variable at a
+  reload names the key but not the value, a file outside the data folder and an unusable mapper;
   `ValueReaderTest` checks that the reader's type maps equal `ValueTypes` and reads every scalar
   type alone and in a list, a nested enum and malformed values; `ValueIntegrationTest` compiles a plugin with `@Value` properties and runs it at start and reload;
   `SubclassValueIntegrationTest` compiles a plain `BackgroundTask` with body and constructor

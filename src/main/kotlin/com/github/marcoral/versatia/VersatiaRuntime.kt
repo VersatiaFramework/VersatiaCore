@@ -1,6 +1,7 @@
 package com.github.marcoral.versatia
 
 import com.github.marcoral.versatia.di.ExposedBeanRegistry
+import com.github.marcoral.versatia.engine.command.CommandText.plain
 import com.github.marcoral.versatia.engine.descriptor.DescriptorLoader
 import com.github.marcoral.versatia.engine.descriptor.PluginTarget
 import com.github.marcoral.versatia.engine.descriptor.VersatiaPluginDescriptor
@@ -11,8 +12,8 @@ import org.bukkit.plugin.Plugin
  * The engine: reads a plugin's descriptor at each lifecycle event, hands it to the processors it
  * names, and keeps the state those processors build, per plugin until it is disabled and for the
  * runtime until it is closed. Its [registry] keeps the enhanced plugins by their friendly names,
- * which is how a reload addresses them; a plugin counts as running once registered, which happens
- * only when its start completed. Nothing in here knows any particular feature, except that a reload
+ * which is how a reload addresses them; a plugin's name is reserved while it starts, and it counts as
+ * running once its start completed. Nothing in here knows any particular feature, except that a reload
  * follows the exposed-bean registry to the plugins holding beans of the reloaded one that follow
  * its reloads (those with `@Value` properties). Starting, reloading and disabling touch Bukkit
  * state, so each refuses to run off the server's main thread; with a [debugLog] every step is
@@ -34,14 +35,19 @@ class VersatiaRuntime(
 
     override fun enhance(plugin: Plugin) {
         checkMainThread(plugin, "start")
-        if (plugin in starting || registry.friendlyNameOf(plugin) != null) throw EnhancementException("Plugin ${plugin.name} is already running")
+        if (plugin in starting || registry.isRunning(plugin)) throw EnhancementException("Plugin ${plugin.name} is already running")
         val store = states.of(plugin.name)
         val context = DefaultEnhancementContext(plugin, LifecycleEvent.START, store, states.runtime)
         val descriptor = DescriptorLoader.load(plugin.pluginMeta.mainClass, context)
         val name = friendlyNameOf(descriptor, plugin)
-        registry.checkAvailable(name, plugin)
-        tracking(plugin, context, store, starting) { enhancer.enhance(descriptor, context) }
-        if (!context.cancelled) registry.register(name, plugin)
+        registry.reserve(name, plugin)
+        try {
+            tracking(plugin, context, store, starting) { enhancer.enhance(descriptor, context) }
+        } catch (e: Throwable) {
+            registry.unregister(plugin)
+            throw e
+        }
+        if (context.cancelled) registry.unregister(plugin) else registry.register(plugin)
     }
 
     /** Reloads [plugin] and the plugins using its beans; a failure of [plugin] is thrown, one of the others logged. */
@@ -51,7 +57,7 @@ class VersatiaRuntime(
         outcomes.first { it.plugin === plugin }.failure?.let { throw it }
         val cascaded = outcomes.filter { it.cause != null }
         cascaded.forEach { it.log(plugin.logger) }
-        ReloadOutcome.summary(cascaded)?.let(plugin.logger::info)
+        ReloadOutcome.summary(cascaded)?.let { plugin.logger.info(it.plain()) }
     }
 
     /**
@@ -115,7 +121,7 @@ class VersatiaRuntime(
     private fun reloadAlone(plugin: Plugin) {
         when {
             plugin in starting -> throw EnhancementException("Plugin ${plugin.name} is still starting; it can be reloaded once its start has completed")
-            registry.friendlyNameOf(plugin) == null -> throw EnhancementException("Plugin ${plugin.name} is not running")
+            !registry.isRunning(plugin) -> throw EnhancementException("Plugin ${plugin.name} is not running")
             plugin in reloading -> throw EnhancementException("Plugin ${plugin.name} is already reloading; a reload cannot start another one")
         }
         val store = states.of(plugin.name)
@@ -149,7 +155,11 @@ class VersatiaRuntime(
         checkMainThread(plugin, "stop")
         starting.remove(plugin)?.cancel()
         reloading.remove(plugin)?.cancel()
-        if (registry.friendlyNameOf(plugin) == null) return states.drop(plugin.name)
+        if (!registry.isRunning(plugin)) return try {
+            states.drop(plugin.name)
+        } finally {
+            registry.unregister(plugin)
+        }
         try {
             run(plugin, LifecycleEvent.STOP)
         } finally {
@@ -164,7 +174,7 @@ class VersatiaRuntime(
     override fun close() = states.close()
 
     /** The state kept for [plugin] while it runs, read by diagnostics such as `/versatia info`; null when it is not running. */
-    fun stateOf(plugin: Plugin): StateStore? = if (registry.friendlyNameOf(plugin) != null) states.of(plugin.name) else null
+    fun stateOf(plugin: Plugin): StateStore? = if (registry.isRunning(plugin)) states.of(plugin.name) else null
 
     /** The state shared by all plugins, such as the exposed-bean registry. */
     val runtimeState: StateStore get() = states.runtime

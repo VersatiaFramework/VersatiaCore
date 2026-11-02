@@ -4,6 +4,10 @@ import com.github.marcoral.versatia.ConditionalOnPlugin
 import com.github.marcoral.versatia.Phase
 import com.github.marcoral.versatia.ReloadOutcome
 import com.github.marcoral.versatia.VersatiaCore
+import com.github.marcoral.versatia.engine.command.CommandText.line
+import com.github.marcoral.versatia.engine.command.CommandText.lines
+import com.github.marcoral.versatia.engine.command.CommandText.plain
+import com.github.marcoral.versatia.engine.command.CommandText.values
 import com.github.marcoral.versatia.lifecycle.AutoInvoke
 import dev.jorel.commandapi.CommandAPI
 import dev.jorel.commandapi.arguments.ArgumentSuggestions
@@ -12,8 +16,6 @@ import dev.jorel.commandapi.kotlindsl.commandAPICommand
 import dev.jorel.commandapi.kotlindsl.stringArgument
 import dev.jorel.commandapi.kotlindsl.subcommand
 import java.util.logging.Level
-import net.kyori.adventure.text.Component.text
-import net.kyori.adventure.text.format.NamedTextColor
 import org.bukkit.command.CommandSender
 import org.bukkit.plugin.Plugin
 
@@ -83,16 +85,16 @@ object VersatiaCommand {
             in plugins -> mapOf(name to plugins.getValue(name))
             else -> return unknown(sender, name, plugins)
         }
-        if (selected.isEmpty()) return sender.sendMessage(text(running(plugins), NamedTextColor.YELLOW))
+        if (selected.isEmpty()) return sender.sendMessage(running(plugins))
         val outcomes = core.runtime.reload(selected.values)
-        for (outcome in outcomes) outcome.message?.let {
+        for (outcome in outcomes) outcome.reply?.let {
             outcome.log(core.logger)
-            sender.sendMessage(text(it, NamedTextColor.RED))
+            sender.sendMessage(it)
         }
 
         ReloadOutcome.summary(outcomes)?.let { summary ->
-            if (outcomes.any { it.cause != null }) core.logger.info(summary)
-            sender.sendMessage(text(summary, NamedTextColor.GREEN))
+            if (outcomes.any { it.cause != null }) core.logger.info(summary.plain())
+            sender.sendMessage(summary)
         }
     }
 
@@ -104,12 +106,12 @@ object VersatiaCommand {
             in plugins -> info.details(plugins.getValue(name))
             else -> return unknown(sender, name, plugins)
         }
-        sender.sendMessage(text(lines.joinToString("\n")))
+        sender.sendMessage(lines(lines))
     }
 
     private fun unknown(sender: CommandSender, name: String, plugins: Map<String, Plugin>) =
-        sender.sendMessage(text("No Versatia plugin is called \"$name\". ${running(plugins)}", NamedTextColor.RED))
+        sender.sendMessage(line("No Versatia plugin is called \"{}\". {}", name, running(plugins), color = CommandText.ERROR))
 
     private fun running(plugins: Map<String, Plugin>) =
-        if (plugins.isEmpty()) "No Versatia plugin is running." else "Running: ${plugins.keys.joinToString()}."
+        if (plugins.isEmpty()) line("No Versatia plugin is running.", color = CommandText.WARNING) else line("Running: {}.", values(plugins.keys))
 }

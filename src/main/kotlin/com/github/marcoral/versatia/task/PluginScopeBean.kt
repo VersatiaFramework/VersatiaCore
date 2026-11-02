@@ -9,6 +9,7 @@ import com.github.marcoral.versatia.engine.descriptor.Parameter
 import com.github.marcoral.versatia.util.plugin.logSevere
 import com.github.marcoral.versatia.util.plugin.logWarning
 import kotlin.coroutines.CoroutineContext
+import kotlin.time.Duration
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineName
@@ -37,6 +38,9 @@ internal class PluginScopeBean(private val plugin: Plugin, ticker: ServerTicker)
     val closeTimeout get() = loop.closeTimeout
 
     override fun condition(vararg triggers: RecheckTrigger, check: () -> Boolean) = clock.condition(triggers.toList(), check, job)
+
+    override fun <T : Any> perPlayer(keepAfterQuit: Duration): PlayerValues<T> =
+        PluginPlayerValues(plugin, this, (keepAfterQuit.inWholeMilliseconds + MS_PER_TICK - 1) / MS_PER_TICK, clock::delayTicks, job)
 
     init {
         job.invokeOnCompletion { if (!lane.stopping) plugin.logWarning("PluginScope was cancelled by plugin code, so nothing launched from it runs until the plugin restarts; cancel the jobs you launch, not the scope") }
@@ -71,6 +75,7 @@ internal class PluginScopeBean(private val plugin: Plugin, ticker: ServerTicker)
 
     companion object {
         val KEY = StateKey<PluginScopeBean>("pluginScope")
+        private const val MS_PER_TICK = 50L
 
         /** The plugin's scope, resolved through its beans the first time and kept in its state; null when the plugin has no bean container. */
         fun of(context: EnhancementContext) = context.state[KEY] ?: context.state[BeanResolver.KEY]?.let { beans ->

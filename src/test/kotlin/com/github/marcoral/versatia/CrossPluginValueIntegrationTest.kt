@@ -2,6 +2,7 @@ package com.github.marcoral.versatia
 
 import com.github.marcoral.versatia.config.PreviousValueTracking
 import com.github.marcoral.versatia.di.BeanResolver
+import com.github.marcoral.versatia.engine.command.CommandText.plain
 import com.github.marcoral.versatia.engine.command.PluginInfo
 import com.github.marcoral.versatia.engine.descriptor.VersatiaPluginDescriptor
 import com.github.marcoral.versatia.ksp.VersatiaSymbolProcessorProvider
@@ -283,12 +284,13 @@ class CrossPluginValueIntegrationTest {
         assertTrue(lines.none { "0.125" in it }, "values are never logged")
 
         val info = PluginInfo(runtime)
-        assertEquals(listOf("Economy (Economy 0.0.1), descriptor format $format", "Shop (Shop 0.0.1), descriptor format $format"), info.overview())
-        val economyInfo = info.details(economy)
-        assertContains(economyInfo, "  \"priceList\" $priceList, exposed prototype")
+        assertEquals(listOf("Economy 0.0.1 (descriptor format $format)", "Shop 0.0.1 (descriptor format $format)"), info.overview().map { it.plain() })
+        val economyInfo = info.details(economy).map { it.plain() }
+        assertContains(economyInfo, "  exposed prototype (1):")
+        assertContains(economyInfo, "    \"priceList\" $priceList")
         assertContains(economyInfo, "Exposed beans used by others: \"priceList\" by Shop")
         assertContains(economyInfo, "Reloads cascade to: Shop")
         assertContains(economyInfo, "@Value files: config.yml")
-        assertEquals(listOf("Reloads cascade to: none", "@Value files: none"), info.details(shop).takeLast(2))
+        assertEquals(listOf("Reloads cascade to: none", "@Value files: none"), info.details(shop).takeLast(2).map { it.plain() })
     }
 }

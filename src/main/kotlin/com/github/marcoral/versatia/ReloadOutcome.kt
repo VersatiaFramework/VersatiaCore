@@ -1,9 +1,15 @@
 package com.github.marcoral.versatia
 
+import com.github.marcoral.versatia.engine.command.CommandText
+import com.github.marcoral.versatia.engine.command.CommandText.line
+import com.github.marcoral.versatia.engine.command.CommandText.plain
+import com.github.marcoral.versatia.engine.command.CommandText.values
 import com.github.marcoral.versatia.util.config.ConfigurationValueException
 import java.nio.charset.CharacterCodingException
 import java.util.logging.Level
 import java.util.logging.Logger
+import net.kyori.adventure.text.Component
+import net.kyori.adventure.text.Component.text
 import org.bukkit.configuration.InvalidConfigurationException
 import org.bukkit.plugin.Plugin
 
@@ -14,14 +20,17 @@ import org.bukkit.plugin.Plugin
  */
 class ReloadOutcome(val name: String, val plugin: Plugin, val cause: String?, val failure: Throwable?) {
     /** What went wrong, said once: the messages of the failure and its causes without the repeated `Plugin X:` prefix. */
-    val message
+    val message get() = reply?.plain()
+
+    /** [message] for a reply: the plugin names in the value colour, the rest red. */
+    val reply
         get() = failure?.let {
             val reason = causesOf(it)
                 .map { e -> (e.message ?: e.javaClass.simpleName).removePrefix("Plugin ${plugin.name}: ") }
                 .fold(listOf<String>()) { messages, message -> if (messages.lastOrNull()?.contains(message) == true) messages else messages + message }
                 .joinToString(": ")
-            if (cause == null) "$name failed to reload: $reason"
-            else "$name failed to reload after $cause, whose beans it uses: $reason. $cause stays reloaded; fix $name and reload it"
+            if (cause == null) line("{} failed to reload: {}", name, text(reason), color = CommandText.ERROR)
+            else line("{} failed to reload after {}, whose beans it uses: {}. {} stays reloaded; fix {} and reload it", name, cause, text(reason), cause, name, color = CommandText.ERROR)
         }
 
     /** Logs the failure: a configuration mistake as one warning without a stack trace, anything else with it. */
@@ -34,15 +43,17 @@ class ReloadOutcome(val name: String, val plugin: Plugin, val cause: String?, va
     private fun causesOf(e: Throwable) = generateSequence(e) { it.cause }
 
     companion object {
-        /** `Reloaded A; then B, C, which use beans of A.` for the plugins of [outcomes] that reloaded, or null when none did. */
-        fun summary(outcomes: List<ReloadOutcome>): String? {
+        /** `Reloaded A; then B, C, which use beans of A.` for the plugins of [outcomes] that reloaded, or null when none did; plugin names in the value colour. */
+        fun summary(outcomes: List<ReloadOutcome>): Component? {
             val (asked, cascaded) = outcomes.filter { it.failure == null }.partition { it.cause == null }
             if (asked.isEmpty() && cascaded.isEmpty()) return null
-            val then = if (cascaded.isEmpty()) "" else {
-                val verb = if (cascaded.size == 1) "uses" else "use"
-                "${if (asked.isEmpty()) "" else "; then "}${cascaded.joinToString { it.name }}, which $verb beans of ${cascaded.mapNotNull { it.cause }.distinct().joinToString()}"
-            }
-            return "Reloaded ${asked.joinToString { it.name }}$then."
+            val names = values(asked.map { it.name })
+            if (cascaded.isEmpty()) return line("Reloaded {}.", names, color = CommandText.SUCCESS)
+            val then = values(cascaded.map { it.name })
+            val causes = values(cascaded.mapNotNull { it.cause }.distinct())
+            val verb = if (cascaded.size == 1) "uses" else "use"
+            return if (asked.isEmpty()) line("Reloaded {}, which $verb beans of {}.", then, causes, color = CommandText.SUCCESS)
+            else line("Reloaded {}; then {}, which $verb beans of {}.", names, then, causes, color = CommandText.SUCCESS)
         }
     }
 }
