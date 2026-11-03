@@ -95,3 +95,7 @@ still works and the copy step is skipped. The path can also be passed for a sing
 - `docs/architecture.md` – how VersatiaAPI and VersatiaCore cooperate
 - `docs/runtime.md` – enhancement pipeline and dependency injection at runtime
 - `docs/build.md` – build configuration details (dependency on VersatiaAPI, settings layers, configuration cache)
+
+## License
+
+Apache License 2.0; see [LICENSE](LICENSE).
