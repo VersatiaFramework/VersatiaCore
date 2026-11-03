@@ -1,6 +1,6 @@
 name: VersatiaCore
 version: '${version}'
-main: com.github.marcoral.versatia.VersatiaCore
+main: dev.versatia.VersatiaCore
 api-version: '1.21'
 author: Versatia
 description: Core of the Versatia framework.

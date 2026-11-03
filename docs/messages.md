@@ -2,7 +2,7 @@
 
 `Messages` (package `messages`) and `Text` (package `text`) are part of VersatiaAPI; their
 implementation lives here, in the packages of the same names. Plugin-author documentation:
-https://versatiaframework.github.io/VersatiaDocs/docs/messages.
+https://versatia.dev/docs/messages.
 
 ## Two prototypes per plugin
 
@@ -23,9 +23,9 @@ session, and a plugin that never injects them never has one.
 
 ## Two packages
 
-The packages mirror the API's. `com.github.marcoral.versatia.text` holds the parser (`TextImpl`,
+The packages mirror the API's. `dev.versatia.text` holds the parser (`TextImpl`,
 `ArgumentResolver`, `Substitution`, `Presenters`, `BuiltInPresentations`) and never refers to
-`messages`; `com.github.marcoral.versatia.messages` holds the bank (`MessagesImpl`,
+`messages`; `dev.versatia.messages` holds the bank (`MessagesImpl`,
 `MessageLoader`, `MessageImpl`) and the main class, and reaches the parser only through the `Text`
 interface. The two halves could be split again without touching a consumer's imports.
 

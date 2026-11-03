@@ -96,7 +96,7 @@ else is special about them. This fixes the division of labour:
 - **Packages are organised by feature**, as if API, Core and the compile-time step were slices of
   one monolith: a feature package holds the feature's definitions in VersatiaAPI and its processors
   in VersatiaCore. The enhancement mechanism and the plugin bootstrap (`VersatiaPlugin`,
-  `VersatiaEngine`) are elementary and belong to the root package `com.github.marcoral.versatia`;
+  `VersatiaEngine`) are elementary and belong to the root package `dev.versatia`;
   there are no packages named after layers. The descriptor is a technical detail of the
   mechanism, not a feature.
 

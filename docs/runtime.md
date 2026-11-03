@@ -154,7 +154,7 @@ is logged by VersatiaCore at `INFO`, as `[debug] <plugin> <EVENT>: <step>`:
 
 | Step | Written by | Line |
 |---|---|---|
-| descriptor | `PluginEnhancer` | `descriptor format 1.6, 12 elements, 7 for this event` |
+| descriptor | `PluginEnhancer` | `descriptor format 1.0, 12 elements, 7 for this event` |
 | skipped element | `PluginEnhancer` | `skipped VaultBridge: @ConditionalOnPlugin(Vault) is not met` (at every event, unlike the `INFO` line at start) |
 | dispatch | `PluginEnhancer` | `AutoInvokeEnhancementProcessor receives Reports.report(), Shop.open()` |
 | beans | `PluginBeanSession` | `created 3 beans: "plugin" (...), ...` and `exposes "prices" (...) as exposed prototype` |
@@ -211,7 +211,7 @@ VersatiaCore itself is in the registry, so a full reload includes it: it restore
 
 `/versatia info [plugin]`, behind `versatia.core.command.info` (default op), is read-only.
 Without an argument it lists the running Versatia plugins, one line each:
-`shop (Shop 1.2.0), descriptor format 1.6`. With a friendly name it adds the plugin's beans
+`shop (Shop 1.2.0), descriptor format 1.0`. With a friendly name it adds the plugin's beans
 (`  "prices" com.example.PriceList, exposed prototype`), `Exposed beans used by others: "prices" by
 Auction`, `Reloads cascade to: Auction` and `@Value files: config.yml`, each `none` when empty.
 `PluginInfo` gathers the lines without CommandAPI types: the registry, the plugin's bean session

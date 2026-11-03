@@ -11,7 +11,7 @@ plugin's descriptor by name and hands its elements to enhancement processors. Se
 [docs/runtime.md](docs/runtime.md) for how plugins are enhanced.
 
 Servers and plugin authors only need the plugin JAR: nothing a plugin compiles against lives here,
-so VersatiaAPI and the [documentation](https://versatiaframework.github.io/VersatiaDocs/) describe
+so VersatiaAPI and the [documentation](https://versatia.dev/) describe
 the runtime's behaviour in full.
 
 The current version (`0.0.1`) provides:
@@ -72,7 +72,7 @@ still works and the copy step is skipped. The path can also be passed for a sing
 
 ## Project layout
 
-- `src/main/kotlin/com/github/marcoral/versatia/` – the runtime itself: `VersatiaCore` (main
+- `src/main/kotlin/dev/versatia/` – the runtime itself: `VersatiaCore` (main
   plugin class, registers the engine service), `VersatiaRuntime`, `PluginEnhancer`,
   `ProcessorLoader`, the plugin state, the registry of enhanced plugins (`EnhancedPlugins`, exposed
   as a bean by `PluginRegistryBean`), `ReloadOutcome` (what a reload reports); the packages

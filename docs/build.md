@@ -24,7 +24,7 @@ Kotlin/JVM project; everything below is about how it adapts to each developer's 
 
 ## Dependency on VersatiaAPI
 
-The main production dependency is `com.github.marcoral.versatia:VersatiaAPI`; the only other one
+The main production dependency is `dev.versatia:VersatiaAPI`; the only other one
 is CommandAPI, described [below](#commandapi). VersatiaAPI exports the Paper API (compile
 classpath only), the Kotlin standard library, `kotlin-reflect` and `kotlinx-coroutines-core`, so
 none of them is declared here.
@@ -35,14 +35,14 @@ Three things cannot be inherited through a dependency and therefore stay in this
 - the Java 21 target settings.
 
 VersatiaAPI is resolved from the local Maven repository (`mavenLocal()`, filtered to the
-`com.github.marcoral.versatia` group; all repositories are declared in `settings.gradle.kts`), where its own build
+`dev.versatia` group; all repositories are declared in `settings.gradle.kts`), where its own build
 publishes it with `./gradlew publishToMavenLocal`. The two builds share nothing else; from this
 project's point of view VersatiaAPI is an ordinary external library.
 
 ### VersatiaCore enhances itself
 
 The KSP plugin and `VersatiaAPI-ksp` are applied to the main source set exactly as in a plugin
-build, so `com.github.marcoral.versatia.VersatiaDescriptor` is generated for VersatiaCore's own
+build, so `dev.versatia.VersatiaDescriptor` is generated for VersatiaCore's own
 main class. That is how the `/versatia` command is declared: as an auto-invoked function, not as
 code in `onEnable`.
 

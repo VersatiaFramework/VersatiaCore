@@ -8,7 +8,7 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
-group = "com.github.marcoral.versatia"
+group = "dev.versatia"
 version = providers.gradleProperty("versatiaVersion").get()
 
 // Paper API and the Kotlin standard library are inherited from VersatiaAPI; see docs/build.md
@@ -39,7 +39,7 @@ kotlin {
     compilerOptions {
         jvmTarget = JvmTarget.JVM_21
         // Framework code may use the plumbing marked @VersatiaInternalApi; see docs/api.md of VersatiaAPI
-        optIn.add("com.github.marcoral.versatia.VersatiaInternalApi")
+        optIn.add("dev.versatia.VersatiaInternalApi")
     }
 }
 
