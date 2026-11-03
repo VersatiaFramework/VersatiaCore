@@ -342,6 +342,8 @@ the type it is injected as.
 | `task.PluginScopeBean`            | exposed prototype | `PluginScope` (and `CoroutineScope`)        | a scope of its own, see [`PluginScopeBean`](#pluginscopebean) |
 | `PluginLoggerBean`                | exposed prototype | `java.util.logging.Logger`                  | `plugin.logger`         |
 | `PluginComponentLoggerBean`       | exposed prototype | `ComponentLogger` (and `org.slf4j.Logger`)  | `plugin.componentLogger` |
+| `text.TextImpl`                   | exposed prototype | `Text`                                      | a parser of its own, see [messages.md](messages.md) |
+| `messages.MessagesImpl`           | exposed prototype | `Messages`                                  | the consumer's `messages/` folder and its `Text`, see [messages.md](messages.md) |
 
 Each prototype takes the consuming `Plugin`, so a module prototype that takes a `Logger` gets the
 logger of the plugin it is made for (row "a prototype" of the table above), and the consumer's

@@ -10,13 +10,9 @@ plugin's descriptor by name and hands its elements to enhancement processors. Se
 [docs/architecture.md](docs/architecture.md) for the overall design and
 [docs/runtime.md](docs/runtime.md) for how plugins are enhanced.
 
-## A private repository
-
-Unlike VersatiaAPI, the documentation and the examples, this repository is **private**: the
-runtime is the part of Versatia that is protected and may be offered commercially in the future.
-Access to the sources is granted individually by the Versatia team; everybody else uses VersatiaCore
-as a plugin JAR, which is all a server or a plugin author needs. Nothing a plugin compiles against
-lives here, so the public VersatiaAPI and the documentation describe the runtime's behaviour in full.
+Servers and plugin authors only need the plugin JAR: nothing a plugin compiles against lives here,
+so VersatiaAPI and the [documentation](https://versatiaframework.github.io/VersatiaDocs/) describe
+the runtime's behaviour in full.
 
 The current version (`0.0.1`) provides:
 
