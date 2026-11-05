@@ -87,7 +87,7 @@ class TaskIntegrationTest {
         val result = KotlinCompilation().apply {
             sources = listOf(SourceFile.kotlin("Ticks.kt", source))
             inheritClassPath = true
-            jvmTarget = "21"
+            jvmTarget = "25"
             messageOutputStream = System.out
             configureKsp {
                 symbolProcessorProviders += VersatiaSymbolProcessorProvider()

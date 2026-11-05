@@ -1,6 +1,6 @@
 # VersatiaCore
 
-Core of the **Versatia framework**: a Paper **1.21.4** plugin written in Kotlin and built with
+Core of the **Versatia framework**: a Paper **26.3** plugin written in Kotlin and built with
 Gradle.
 
 VersatiaCore is the runtime of the framework. It implements the API of VersatiaAPI, a library
@@ -40,7 +40,7 @@ The current version (`0.0.1`) provides:
 
 ## Requirements
 
-- JDK 21 or newer
+- JDK 25 or newer
 - VersatiaAPI published to your local Maven repository: run `./gradlew publishToMavenLocal`
   in its checkout once, and again after every change there (it publishes both `VersatiaAPI`
   and `VersatiaAPI-ksp`, the latter is used by this project's tests)

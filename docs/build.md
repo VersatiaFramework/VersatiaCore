@@ -5,8 +5,8 @@ Kotlin/JVM project; everything below is about how it adapts to each developer's 
 
 ## Toolchain
 
-- Paper 1.21.4 requires Java 21, so both `java` and `kotlin` blocks target JVM 21.
-  Any JDK 21 or newer can compile the project; no Gradle toolchain download is configured.
+- Paper 26.3 requires Java 25, so both `java` and `kotlin` blocks target JVM 25.
+  Any JDK 25 or newer can compile the project; no Gradle toolchain download is configured.
 - Gradle comes from the wrapper (`gradlew`), so nothing has to be installed globally.
 - Versions come from the shared catalog `VersatiaCatalog` (published by VersatiaAPI), imported
   as `libs` in `settings.gradle.kts` at the `versatiaVersion` from `gradle.properties`.
@@ -32,7 +32,7 @@ Three things cannot be inherited through a dependency and therefore stay in this
 
 - the Kotlin Gradle plugin, because plugins are not dependencies,
 - the Paper repository, because Gradle never inherits repositories,
-- the Java 21 target settings.
+- the Java 25 target settings.
 
 VersatiaAPI is resolved from the local Maven repository (`mavenLocal()`, filtered to the
 `dev.versatia` group; all repositories are declared in `settings.gradle.kts`), where its own build

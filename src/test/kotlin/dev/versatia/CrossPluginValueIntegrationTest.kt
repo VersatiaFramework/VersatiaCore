@@ -53,7 +53,7 @@ class CrossPluginValueIntegrationTest {
         val result = KotlinCompilation().apply {
             sources = listOf(SourceFile.kotlin("$name.kt", source))
             inheritClassPath = true
-            jvmTarget = "21"
+            jvmTarget = "25"
             messageOutputStream = System.out
             if (classpath != null) classpaths = listOf(classpath.outputDirectory)
             configureKsp {

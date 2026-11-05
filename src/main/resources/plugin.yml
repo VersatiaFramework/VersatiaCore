@@ -1,7 +1,7 @@
 name: VersatiaCore
 version: '${version}'
 main: dev.versatia.VersatiaCore
-api-version: '1.21'
+api-version: '26.3'
 author: Versatia
 description: Core of the Versatia framework.
 libraries:
