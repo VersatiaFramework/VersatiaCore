@@ -4,7 +4,7 @@
 implementation lives here, in the packages of the same names. Plugin-author documentation:
 https://versatia.dev/docs/messages.
 
-## Two prototypes per plugin
+## Two prototypes per plugin, one sheet of styles
 
 VersatiaCore exposes two `@ExposePrototype`s, so every plugin that injects them receives instances
 of its own:
@@ -12,22 +12,28 @@ of its own:
 - `TextImpl`, the parser behind `Text`. The presentations and tags a plugin registers never leak
   into another plugin, and they vanish when that plugin is disabled, because the instance belongs
   to the consumer's bean session. The built-in presentations (`BuiltInPresentations`) are one
-  shared `Presenters` used as the fallback of every instance.
+  shared `Presenters` used as the fallback of every instance. It takes the consuming `Plugin` and
+  VersatiaCore's `ServerStyles`.
 - `MessagesImpl`, the bank behind `Messages`, taking the consuming `Plugin` and its `Text`. The
   runtime hands every consumer an instance made with its own plugin, whose `messages/` directory is
   read, and the `Text` instance made for that consumer, the same one its own beans inject, so the
   presentations the consumer registered apply to its messages.
 
 Nothing about them is kept in VersatiaCore itself: every instance belongs to the consumer's bean
-session, and a plugin that never injects them never has one.
+session, and a plugin that never injects them never has one. The one thing the plugins share is
+`ServerStyles`, a `@LocalBean` of VersatiaCore that every `TextImpl` receives as the owner's
+argument: the styles of `plugins/VersatiaCore/styles.yml`; see [Styles](#styles).
 
 ## Two packages
 
 The packages mirror the API's. `dev.versatia.text` holds the parser (`TextImpl`,
-`ArgumentResolver`, `Substitution`, `Presenters`, `BuiltInPresentations`) and never refers to
-`messages`; `dev.versatia.messages` holds the bank (`MessagesImpl`,
-`MessageLoader`, `MessageImpl`) and the main class, and reaches the parser only through the `Text`
-interface. The two halves could be split again without touching a consumer's imports.
+`ArgumentResolver`, `Substitution`, `Presenters`, `BuiltInPresentations`, `LegacyColorCodes`) and
+the styles (`ServerStyles`, `StyleFile`, `StyleSheet`, `StyleSnippet`, `TagNames`), and never
+refers to `messages`; `dev.versatia.messages` holds the bank (`MessagesImpl`, `MessageLoader`,
+`MessageImpl`) and reaches the parser through the `Text` interface and its Core-internal extension
+`CheckingText`, which adds `check(input)`: reading a text for its tags alone. The two halves could
+be split again without touching a consumer's imports, once `check` is public. Both read their
+files through `engine.yaml.TextYaml`, the YAML reader that keeps every scalar a text.
 
 ## Resolution
 
@@ -59,9 +65,10 @@ and an unquoted argument holding a brace is wrapped in single quotes first, so `
 split or end it. A hostile value such as `x'><click:run_command:'/op x'>` stays inside the
 argument. The one argument MiniMessage parses again, the text of `<hover:show_text:...>` (and the
 name of `show_entity`), keeps the component tag, quoted the same way, so hover text shows the
-value's formatting and still never parses it. Braces in an unknown or escaped tag, which
-MiniMessage prints as text, take the component path like any text. `<pre>` is not special-cased:
-a brace inside it shows the private tag literally.
+value's formatting and still never parses it. Braces in an escaped tag, which MiniMessage prints
+as text, take the component path like any text. A tag with a brace in its arguments that nobody
+knows is noted as unknown right there: the private tag would split it, and MiniMessage would never
+ask about its name.
 
 A `{` after an odd run of backslashes is escaped, consistent with MiniMessage's `\<`: `\{nick}`
 shows `{nick}`. In the text the scanner treats `\{` as a third escape beside `\<` and `\\`, writing
@@ -78,6 +85,93 @@ MiniMessage resolves tags in a pre-processing pass and again while parsing, and 
 exception a resolver throws, leaving the tag as text; the resolver therefore records the first
 failure of a tag, which `parse` throws once MiniMessage returns.
 
+A tag that does not exist is an error, never text. MiniMessage asks the resolver `has(name)` for
+every tag it reads, opening or closing, in the text and in hover text, and prints the tag when the
+answer is no; the resolver notes each name that neither it nor the standard tags answer, and
+`parse` throws them as one `UnknownTagException` listing the styles. Only a name with a letter
+counts (`TagNames.isMeantAsTag`): `<3>`, `<->` and `<?>` were never meant as tags and stay text,
+as does anything MiniMessage does not read as a tag at all (`<3`, `<two words>`). A real tag with
+an argument MiniMessage cannot read (`<color:nope>`) is still printed: the standard resolvers fail
+inside MiniMessage, where a closing tag is resolved without arguments too, so the two cannot be
+told apart from here. MiniMessage 5 has no `<pre>`, which is therefore an unknown tag like any
+other.
+
+## Styles
+
+A style is a name the server maps to MiniMessage, used as a tag: `<positive>Quest {quest} done.`.
+`ServerStyles` reads `styles.yml` in VersatiaCore's data folder into a `StyleSheet` when
+VersatiaCore starts and at each of its reloads (it is a `Reloadable` local bean; the file ships
+with comments only, so resource extraction puts it there). `StyleFile` is the format: a tree in
+which a scalar is a style, a section a scope whose `style` key is its own style and whose other
+keys are names that apply only inside it, and a dotted key (`positive.accent`) the same as
+nesting. A name must be a tag name of its own (`[A-Za-z0-9_-]+`, no standard MiniMessage tag, not
+`style`, not `versatia-...`), a path is defined once, and an empty section is an error. MiniMessage
+hands every tag name over in lower case, so a sheet keys its styles by `TagNames.key` and each
+`StyleNode` keeps the spelling the file writes, for what is shown and appended: `serverTag` and
+`servertag` are one name. Every
+style is compiled once into a `StyleSnippet`: the text followed by a private content tag is
+parsed, with the unknown tags noted as above and legacy colour codes rejected; when the result is
+the content alone with a style on it, the snippet is that `Style` and applying it costs no
+parsing, otherwise (a gradient, text of its own) it is parsed again around each content. A style
+holds MiniMessage only: another style inside it is an unknown tag.
+
+`StyleSheet.resolve(name, scopes)` looks a name up in the styles around it, nearest first, then
+at the top level. MiniMessage resolves a tag without telling it where it stands, so a style tag
+is both `Inserting` and `Modifying` (`ArgumentResolver.StyleTag`): MiniMessage calls
+`Modifying.visit` with the tag's own node before it asks `Inserting.value()` for the component,
+and the node's `parent()` chain, looked up in an identity map of the nodes that opened a style
+during this parse, gives the scopes. `value()` then opens with the resolved formatting and the
+children follow, exactly as the tags of the snippet would produce, so the result equals the text
+written with those tags; `apply` gives every component back unchanged. Nothing is marked and
+nothing is rewritten afterwards, so no marker can reach a player. A snippet that needs its content
+is applied in `apply` at depth 0, which answers for the whole subtree and returns nothing for the
+rest (the empty components this leaves are dropped by MiniMessage's own compaction). Styles are
+resolved innermost first, so a style inside a gradient keeps its colour. A name that is a style
+somewhere but not where it stands fails as `<accent> is a style only inside <negative>, <positive>`.
+Hover text is parsed by MiniMessage as a text of its own while the outer tree is still being
+built, so its styles start at the top level. A tag registered with `Text.tag` wins over a style of
+its name, and a style tag takes no arguments.
+
+A value takes a style by itself. `ArgumentResolver` renders a brace into a `Rendered`, the
+components with the style names each may take (a collection keeps them per element), once per
+call: the name a presentation is registered with in `Presenters`, a built-in one after its type
+(`player`, also an `OfflinePlayer`, `entity`, `item`, `location`, `world`) and a plugin's own with
+the `style` it passes to `Text.present` or the `style` a `Presentable` answers; `Presenters`
+checks either with `StyleFile.objection`, once per name. Then `accent`, which every value takes:
+a text, a number, a `ComponentLike`, a presentation without a style; what a value formats itself
+wins, as Adventure's children do. Tags holding a value alone win instead: every brace inserts its
+value inside a mark (`ValueMarks`, an insertion only it writes), MiniMessage builds the tree without
+compacting it (`TextImpl.READER`), and `ValueMarks.settle` walks it, gathers the colour, decorations
+and font of the chain of empty components with a single child above each mark, sets them on the
+value and clears them below it, then removes the mark and compacts. Hover texts are settled the same
+way; a gradient, applied while the tree is built, never reaches what has a colour of its own. Where the sheet defines one of those names, the
+brace's tag is an `Insertion`, self-closing and styled by the scopes it finds as a style tag does,
+with the first name that resolves to a style there; otherwise it is the plain inserting tag it
+always was. Two braces stay as they are: one that is all a style's tag holds (the chain of only
+children above its node reaches a node that opened a style), since its author styled it by hand,
+and one whose style is the nearest style around it already, so a style with text of its own is not
+applied twice. The plain text put into a tag argument never takes a style.
+
+`TextImpl` is `Reloadable`: at the start and at every reload of its plugin it hands the plugin to
+`ServerStyles.adopt`, before the plugin's `MessagesImpl`, which was created after it, is loaded.
+`adopt` reads `styles.yml` from the plugin's JAR (`plugin.getResource`; the file sits next to
+`plugin.yml`, outside `resources/`, so it is never extracted) and, when the sheet in memory lacks
+one of its dotted paths, reads the server file again, appends what that lacks under
+`# Default styles of <Plugin>` and swaps the sheet. A name new to the file is written nested as
+shipped; under a name the file has, each lacking style is a dotted line, an own style as
+`name.style`, because a YAML section cannot be opened twice. The file's text is otherwise kept
+byte for byte (its line breaks too) and replaced in one move. The server file wins wherever it
+defines a path, so of two plugins shipping one path the first to start decides and the second
+reads what is there; a default deleted from the file comes back at the plugin's next start or
+reload, like an extracted file. Constant texts are kept per sheet, so a new sheet drops them.
+
+VersatiaCore ships the styles every plugin shares as the `styles.yml` at the root of its own JAR:
+the tones `positive`, `negative`, `warning` and `neutral`, `accent`, `hint`, and `serverTag`, a
+style that holds text, written self-closing in front of a message and shipped empty.
+`ServerStyles.reload` adopts them like any plugin's right after reading the file, so
+they are in the server file before another plugin starts, a plugin's default for one of them is
+never used, and a deleted one comes back at VersatiaCore's next start or reload.
+
 A value that is `Presentable` describes itself; otherwise `Presenters.of` picks, among the types
 registered on the instance that the value is an instance of, the one no other candidate is a
 subtype of, and falls back to the built-ins. Registering a type again replaces its entry, since
@@ -86,10 +180,10 @@ holding Adventure's `Translatable`, which inserts `Component.translatable(value)
 shows `Material`, `EntityType`, `GameMode` and the like in the viewer's language; being a level
 below, it never beats a specific built-in such as `Entity` or `ItemStack`, even for a value that
 implements both without one extending the other. Iterables and object arrays are not registered
-at all: when no presenter answers, `ArgumentResolver` asks `BuiltInPresentations.collection`, which
-joins the elements with `, `, each rendered through the instance's own chain (an element without a
-component fails as `{name[index]}`), and offers `size`; so a plugin's registration for `List`
-still wins. Nothing language-dependent is built in (no durations, dates or number formats). Argument names are
+at all: when no presenter answers, `ArgumentResolver` asks `BuiltInPresentations.elements`, and
+the elements are joined with `, `, each rendered through the instance's own chain (an element
+without a component fails as `{name[index]}`), with `size` as the one property; so a plugin's
+registration for `List` still wins. Nothing language-dependent is built in (no durations, dates or number formats). Argument names are
 letters, digits, `_` and `-`, checked when the `Argument` is created, with one pattern shared by
 argument and property names; an argument given twice is a `DuplicateArgumentException`. Tag names
 are checked against the MiniMessage tag-name syntax, the standard tags and the private placeholder
@@ -133,9 +227,19 @@ code is not preceded by a letter or digit, unless that character ends another co
 two codes, `R&D` and `B&B` none. The warnings are logged only when the load succeeds, again at
 every reload, and `legacy-color-warnings: false` turns them off.
 
-Nothing is parsed at load. Tags are typically registered in a start function, which runs after
-`Reloadable.reload()`, so parsing at load would freeze a tag-free reading of a text that uses
-one, and would evaluate argument tags without arguments. `MessageImpl` keeps the lines of a list
+Nothing is parsed for use at load, but every message is checked for its tags before a player can
+meet it: `MessageImpl.check` reads each line through `CheckingText.check`, the same parse with a
+resolver that renders nothing, calls no argument tag and only notes what does not exist, and a
+failure is a `MessagesLoadException` naming the key and the file. Tags are typically registered in
+a start function, which runs after `Reloadable.reload()`, so the first load cannot be checked on
+the spot. `MessagesImpl` is therefore `StartAware`, a Core-internal hook of the bean session: the
+session's action that creates and loads the beans registers one more completion action, which
+runs after every start function, and calls `started()` on the beans that ask for it; a prototype
+instance obtained later is told right after its first `reload()`. `started()` checks the bank,
+failing the start, and from then on `reload()` checks the new bank before swapping it in, so a
+reload with a tag that does not exist keeps the previous messages. Parsing for use at load would
+also freeze a tag-free reading of a text that uses a tag and evaluate argument tags without
+arguments. `MessageImpl` keeps the lines of a list
 apart and parses each on its own, so formatting does not leak into the next line; `lines()` returns
 them, `get()` returns a single line as it is and several joined with `Component.newline()`. It
 parses at every use and wraps any failure in a `MessageRenderException` naming the plugin, key and
@@ -156,4 +260,16 @@ load, and the legacy-code warnings, collected by a log handler, with their setti
 stub and an `Entity` proxy). `MessagesImplTest` drives the bank
 through a `Plugin` proxy and checks that a failing reload keeps the previous messages;
 `MissingMessageExceptionTest` covers the error text. Nothing needs a server. The Bukkit presentations (`Player`, `ItemStack`, ...) cannot be
-constructed outside a server and are not unit-tested.
+constructed outside a server and are not unit-tested; the style of one is, through a `Player` proxy.
+
+`StyleFileTest` covers the format (scopes, dotted keys, every load error) and the text of what is
+added for a plugin; `TextStylesTest` what styles come to in a parse, compared with the same text
+written in the tags of the style: scopes, the nearest one winning, closing and `<reset>`, snippets
+with gradients and text, hover text, styled values and lists of them, the errors of unknown and
+misplaced tags, and the constant cache following a new sheet. `ServerStylesTest` drives the file:
+reloads, defaults appended under their comment, the file winning, two plugins shipping one name,
+dotted additions, Windows line breaks and files that cannot be read. `MessagesImplTest` checks the
+bank at the end of the start and at a reload, and `BeanLoadingTest` the order of the `StartAware`
+hook. `TextStylesIntegrationTest` runs a plugin compiled with the real KSP processor through the
+runtime: its defaults reach the server file, a tag of a start function counts, and a tag that
+does not exist fails the start or the reload.

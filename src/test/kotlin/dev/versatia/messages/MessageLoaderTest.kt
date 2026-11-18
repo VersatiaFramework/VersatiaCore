@@ -1,8 +1,8 @@
 package dev.versatia.messages
 
+import dev.versatia.testsupport.textOf
 import dev.versatia.text.Argument
 import dev.versatia.text.Text
-import dev.versatia.text.TextImpl
 import dev.versatia.text.UnknownArgumentException
 import dev.versatia.text.arg
 import dev.versatia.text.present
@@ -30,7 +30,7 @@ import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer
 import org.junit.jupiter.api.io.TempDir
 
 /** A `Text`, counting how often it parses. */
-class CountingText(private val text: Text = TextImpl()) : Text by text {
+class CountingText(private val text: Text = textOf()) : Text by text {
     var parses = 0
 
     override fun parse(input: String, vararg arguments: Argument): Component = text.parse(input, *arguments).also { parses++ }
@@ -101,7 +101,12 @@ class MessageLoaderTest {
         """)
         val messages = load()
         assertEquals(0, text.parses, "nothing is parsed at load")
-        assertEquals("<servername>", plain(messages.getValue("server")))
+        val unregistered = assertFailsWith<MessageRenderException> { messages.getValue("server").get() }
+        assertEquals(
+            "Plugin Shop: message \"server\" in messages/a.yml cannot be shown: <servername> is neither a MiniMessage tag nor a style; " +
+                "plugins/VersatiaCore/styles.yml defines no styles. Write \\<servername> to show it as text",
+            unregistered.message,
+        )
 
         var calls = 0
         text.tag("servername") { _, _, _ -> Tag.selfClosingInserting(text("Lobby ${++calls}")) }

@@ -2,7 +2,6 @@ package dev.versatia
 
 import dev.versatia.di.ExposedBean
 import dev.versatia.di.ExposedBeanRegistry
-import dev.versatia.engine.command.CommandText.plain
 import dev.versatia.sample.Ticker
 import dev.versatia.testsupport.Recorder
 import dev.versatia.testsupport.fakePlugin

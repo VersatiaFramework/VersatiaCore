@@ -1,20 +1,11 @@
 package dev.versatia.messages
 
+import dev.versatia.engine.yaml.TextYaml
+import dev.versatia.text.LegacyColorCodes
 import dev.versatia.text.Text
 import dev.versatia.util.config.YAML_EXTENSIONS
 import java.io.File
-import java.io.IOException
-import java.nio.ByteBuffer
-import java.nio.charset.CharacterCodingException
 import java.util.logging.Logger
-import org.yaml.snakeyaml.DumperOptions
-import org.yaml.snakeyaml.LoaderOptions
-import org.yaml.snakeyaml.Yaml
-import org.yaml.snakeyaml.constructor.SafeConstructor
-import org.yaml.snakeyaml.error.MarkedYAMLException
-import org.yaml.snakeyaml.error.YAMLException
-import org.yaml.snakeyaml.representer.Representer
-import org.yaml.snakeyaml.resolver.Resolver
 
 /**
  * Reads every `.yml`/`.yaml` under `<data folder>/messages`, recursively, ordered by the path
@@ -25,11 +16,11 @@ import org.yaml.snakeyaml.resolver.Resolver
  * two, is an error, and so is a key that is a message in one place and a group of messages in another.
  * A file whose name starts with a dot holds no messages; [SETTINGS] holds the settings. Once every
  * file is read, a message with legacy colour codes is reported to [logger], unless the settings
- * turn that off.
+ * turn that off. The tags of the messages are not looked at here: the bank checks them.
  */
 internal class MessageLoader(private val pluginName: String, private val dataFolder: File, private val text: Text, private val logger: Logger) {
-    fun load(): Map<String, Message> {
-        val messages = LinkedHashMap<String, Message>()
+    fun load(): Map<String, MessageImpl> {
+        val messages = LinkedHashMap<String, MessageImpl>()
         val groups = HashMap<String, String>()
         val legacyWarnings = legacyWarnings()
         for ((file, relative) in files()) {
@@ -85,30 +76,10 @@ internal class MessageLoader(private val pluginName: String, private val dataFol
         .sortedBy { it.second }
         .toList()
 
-    private fun read(file: File, relative: String): Map<*, *> {
-        val bytes = try {
-            file.readBytes()
-        } catch (e: IOException) {
-            throw failure("$relative cannot be read: ${e.message}")
-        }
-        val content = try {
-            Charsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(bytes)).toString()
-        } catch (_: CharacterCodingException) {
-            throw failure("$relative is not UTF-8 encoded; save it as UTF-8")
-        }
-        val document = try {
-            yaml().load<Any?>(content)
-        } catch (e: MarkedYAMLException) {
-            val mark = e.problemMark
-            throw failure("$relative is not valid YAML${if (mark == null) "" else " at line ${mark.line + 1}, column ${mark.column + 1}"}: ${e.problem ?: e.message}")
-        } catch (e: YAMLException) {
-            throw failure("$relative is not valid YAML: ${e.message}")
-        }
-        return when (document) {
-            null -> emptyMap<Any, Any>()
-            is Map<*, *> -> document
-            else -> throw failure("$relative must map keys to messages")
-        }
+    private fun read(file: File, relative: String): Map<*, *> = when (val document = TextYaml.read(file, relative, ::failure)) {
+        null -> emptyMap<Any, Any>()
+        is Map<*, *> -> document
+        else -> throw failure("$relative must map keys to messages")
     }
 
     private fun collect(section: Map<*, *>, prefix: String, file: String): List<Pair<String, List<String>>> = section.flatMap { (name, value) ->
@@ -124,19 +95,9 @@ internal class MessageLoader(private val pluginName: String, private val dataFol
 
     private fun failure(message: String) = MessagesLoadException(pluginName, message)
 
-    /** Resolves no implicit type, so every plain scalar is a string. */
-    private class PlainScalars : Resolver() {
-        override fun addImplicitResolvers() = Unit
-    }
-
     companion object {
         const val DIRECTORY = "messages"
         const val SETTINGS = ".versatia.yml"
         const val LEGACY_WARNINGS = "legacy-color-warnings"
-
-        private fun yaml(): Yaml {
-            val options = LoaderOptions().apply { isAllowDuplicateKeys = false }
-            return Yaml(SafeConstructor(options), Representer(DumperOptions()), DumperOptions(), options, PlainScalars())
-        }
     }
 }

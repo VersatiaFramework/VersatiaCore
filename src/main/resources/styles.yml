@@ -1,0 +1,18 @@
+# The styles every Versatia plugin shares. VersatiaCore adds those missing from
+# plugins/VersatiaCore/styles.yml whenever it starts or reloads; what that file defines wins.
+
+# The tone a chat message opens with
+neutral: "<gray>"
+positive: "<green>"
+negative: "<red>"
+warning:
+  style: "<yellow>"
+  accent: "<gold>"
+# What matters most, which every value a message inserts takes by itself, and what matters least
+accent: "<white>"
+hint: "<dark_gray><italic>"
+# The name before a value, and the title of a list or of a page, as VersatiaCore's commands show them
+label: "<gold>"
+heading: "<aqua><bold>"
+# The tag in front of the server's chat messages: nothing until the server writes its own
+serverTag: ""

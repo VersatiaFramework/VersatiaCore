@@ -20,6 +20,7 @@ class PluginBeanSession(
     private val plugin: Plugin,
     private val classLoader: ClassLoader,
     private val exposed: ExposedBeanRegistry,
+    private val defaults: DefaultBeans = DefaultBeans(),
 ) : BeanResolver, AutoCloseable {
     private val pluginName get() = plugin.name
     private val definitions = mutableListOf<BeanDefinition>()
@@ -30,7 +31,9 @@ class PluginBeanSession(
     private val creationActions = HashMap<String, MutableList<(Any) -> Unit>>()
     private val exposedPrototypes = HashMap<String, ExposedBean.Prototype>()
     private var created: LinkedHashMap<BeanDefinition, Any>? = null
+    private val startAware = mutableListOf<StartAware>()
     private var loaded = false
+    private var started = false
     private var instantiationScheduled = false
     private var closed = false
 
@@ -47,8 +50,26 @@ class PluginBeanSession(
                 val exposedBeans = instances.keys.filter { it.scope != BeanScope.LOCAL }
                 if (exposedBeans.isNotEmpty()) context.debug { "exposes ${exposedBeans.joinToString { "$it as ${it.scope.label}" }}" }
                 reload()
+                context.onPluginEnhanced(::completeStart)
             }
         }
+    }
+
+    /** Runs after the start functions, as an action registered by the one that created the beans: tells the [StartAware] beans. */
+    private fun completeStart() {
+        if (closed) return
+        started = true
+        val waiting = startAware.toList()
+        startAware.clear()
+        waiting.forEach(::started)
+    }
+
+    private fun started(bean: StartAware) = try {
+        bean.started()
+    } catch (e: EnhancementException) {
+        throw e
+    } catch (e: Exception) {
+        throw failure("${bean.javaClass.name} failed its check at the end of the start", e)
     }
 
     /** The beans created for the plugin, in creation order; empty before they exist. */
@@ -162,8 +183,14 @@ class PluginBeanSession(
             }
         }
         created = instances
+        defaults.publish(plugin, defaultBeans(instances))
         return instances
     }
+
+    /** What `plugin.text` and the like give: the instances this plugin's beans are injected, made now when no bean has taken one. */
+    private fun defaultBeans(instances: Map<BeanDefinition, Any>) = DefaultBeans.TYPES.entries.mapNotNull { (type, property) ->
+        resolve("plugin.$property", Dependency(type.name, optional = true), instances::getValue).takeUnless { it === DefaultArgument }?.let { type to it }
+    }.toMap()
 
     /**
      * What a prototype's constructor argument is when an instance is made for another plugin: the
@@ -275,6 +302,9 @@ class PluginBeanSession(
         if (closed) return instance.also { (it as? AutoCloseable)?.close() }
         if (instance is AutoCloseable) closeables += instance
         if (instance is Reloadable && reloadables.add(instance) && loaded) reload(instance)
+        if (instance is StartAware) {
+            if (started) started(instance) else startAware += instance
+        }
         return instance
     }
 
@@ -295,6 +325,7 @@ class PluginBeanSession(
      */
     override fun close() {
         closed = true
+        defaults.withdraw(plugin)
         exposed.removeOwnedBy(pluginName)
         exposed.release(pluginName)
         val instances = closeables.asReversed().toList()
@@ -312,6 +343,8 @@ class PluginBeanSession(
     companion object {
         /** The session of the plugin being enhanced, published to other processors as its `BeanResolver`. */
         fun of(context: EnhancementContext) =
-            context.state.getOrPut(BeanResolver.KEY) { PluginBeanSession(context.plugin, context.classLoader, ExposedBeanRegistry.of(context)) } as PluginBeanSession
+            context.state.getOrPut(BeanResolver.KEY) {
+                PluginBeanSession(context.plugin, context.classLoader, ExposedBeanRegistry.of(context), context.runtimeState.getOrPut(DefaultBeans.KEY) { DefaultBeans() })
+            } as PluginBeanSession
     }
 }

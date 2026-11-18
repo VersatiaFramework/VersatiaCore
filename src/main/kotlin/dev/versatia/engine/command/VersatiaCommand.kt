@@ -4,11 +4,9 @@ import dev.versatia.ConditionalOnPlugin
 import dev.versatia.Phase
 import dev.versatia.ReloadOutcome
 import dev.versatia.VersatiaCore
-import dev.versatia.engine.command.CommandText.line
-import dev.versatia.engine.command.CommandText.lines
-import dev.versatia.engine.command.CommandText.plain
-import dev.versatia.engine.command.CommandText.values
 import dev.versatia.lifecycle.AutoInvoke
+import dev.versatia.text.Text
+import dev.versatia.text.arg
 import dev.jorel.commandapi.CommandAPI
 import dev.jorel.commandapi.arguments.ArgumentSuggestions
 import dev.jorel.commandapi.kotlindsl.anyExecutor
@@ -36,17 +34,17 @@ object VersatiaCommand {
     private var registered = false
 
     @AutoInvoke(Phase.PLUGIN_START_ONLY)
-    fun register(core: VersatiaCore) = failSoft(core, "registered") {
+    fun register(core: VersatiaCore, text: Text) = failSoft(core, "registered") {
         commandAPICommand(NAME, core) {
             subcommand("reload") {
                 withPermission(RELOAD_PERMISSION)
                 stringArgument("plugin", optional = true) { replaceSuggestions(ArgumentSuggestions.stringCollection { core.runtime.registry.friendlyNames }) }
-                anyExecutor { sender, args -> reload(core, sender, args["plugin"] as? String) }
+                anyExecutor { sender, args -> reload(core, text, sender, args["plugin"] as? String) }
             }
             subcommand("info") {
                 withPermission(INFO_PERMISSION)
                 stringArgument("plugin", optional = true) { replaceSuggestions(ArgumentSuggestions.stringCollection { core.runtime.registry.friendlyNames }) }
-                anyExecutor { sender, args -> info(core, sender, args["plugin"] as? String) }
+                anyExecutor { sender, args -> info(core, text, sender, args["plugin"] as? String) }
             }
         }
         registered = true
@@ -78,40 +76,40 @@ object VersatiaCommand {
         )
     }
 
-    private fun reload(core: VersatiaCore, sender: CommandSender, name: String?) {
+    private fun reload(core: VersatiaCore, text: Text, sender: CommandSender, name: String?) {
         val plugins = core.runtime.registry.plugins
         val selected = when (name) {
             null -> plugins
             in plugins -> mapOf(name to plugins.getValue(name))
-            else -> return unknown(sender, name, plugins)
+            else -> return sender.sendMessage(unknown(name, plugins).component(text))
         }
-        if (selected.isEmpty()) return sender.sendMessage(running(plugins))
+        if (selected.isEmpty()) return sender.sendMessage(running(plugins).component(text))
         val outcomes = core.runtime.reload(selected.values)
         for (outcome in outcomes) outcome.reply?.let {
             outcome.log(core.logger)
-            sender.sendMessage(it)
+            sender.sendMessage(it.component(text))
         }
 
         ReloadOutcome.summary(outcomes)?.let { summary ->
             if (outcomes.any { it.cause != null }) core.logger.info(summary.plain())
-            sender.sendMessage(summary)
+            sender.sendMessage(summary.component(text))
         }
     }
 
-    private fun info(core: VersatiaCore, sender: CommandSender, name: String?) {
+    private fun info(core: VersatiaCore, text: Text, sender: CommandSender, name: String?) {
         val plugins = core.runtime.registry.plugins
         val info = PluginInfo(core.runtime)
         val lines = when (name) {
             null -> info.overview().ifEmpty { listOf(running(plugins)) }
             in plugins -> info.details(plugins.getValue(name))
-            else -> return unknown(sender, name, plugins)
+            else -> return sender.sendMessage(unknown(name, plugins).component(text))
         }
-        sender.sendMessage(lines(lines))
+        sender.sendMessage(Reply.lines(lines, text))
     }
 
-    private fun unknown(sender: CommandSender, name: String, plugins: Map<String, Plugin>) =
-        sender.sendMessage(line("No Versatia plugin is called \"{}\". {}", name, running(plugins), color = CommandText.ERROR))
+    private fun unknown(name: String, plugins: Map<String, Plugin>) =
+        Reply("<negative>No Versatia plugin is called \"{name}\". {running}", arg("name", name), arg("running", running(plugins)))
 
     private fun running(plugins: Map<String, Plugin>) =
-        if (plugins.isEmpty()) line("No Versatia plugin is running.", color = CommandText.WARNING) else line("Running: {}.", values(plugins.keys))
+        if (plugins.isEmpty()) Reply("<warning>No Versatia plugin is running.") else Reply("<neutral>Running: {plugins}.", arg("plugins", plugins.keys.toList()))
 }

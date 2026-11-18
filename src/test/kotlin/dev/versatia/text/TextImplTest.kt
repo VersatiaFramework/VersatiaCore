@@ -1,5 +1,6 @@
 package dev.versatia.text
 
+import dev.versatia.testsupport.textOf
 import java.lang.reflect.Proxy
 import java.util.Locale
 import kotlin.test.Test
@@ -41,7 +42,7 @@ class Rank(private val key: String) : Translatable {
 }
 
 class TextImplTest {
-    private val text = TextImpl()
+    private val text = textOf()
 
     private fun plain(input: String, vararg arguments: Argument) = PlainTextComponentSerializer.plainText().serialize(text.parse(input, *arguments))
 
@@ -81,7 +82,7 @@ class TextImplTest {
 
         assertEquals("dog Rex", plain("{pet}", arg("pet", Dog("Rex"))))
         assertEquals("some animal", plain("{pet}", arg("pet", Animal("Cat"))))
-        val other = TextImpl()
+        val other = textOf()
         assertTrue(PlainTextComponentSerializer.plainText().serialize(other.parse("{pet}", arg("pet", Dog("Rex")))).startsWith("${Dog::class.qualifiedName}@"), "another instance knows nothing of the registration")
     }
 
@@ -120,8 +121,11 @@ class TextImplTest {
         assertFailsWith<InvalidArgumentNameException> { arg("Player Name", "x") }
         assertEquals("Argument \"a\" is given twice", assertFailsWith<DuplicateArgumentException> { text.parse("{a}", arg("a", 1), arg("a", 2)) }.message)
         assertFailsWith<ReservedTagNameException> { text.tag("bold") { _, _, _ -> null } }
+        assertFailsWith<ReservedTagNameException> { text.tag("Bold") { _, _, _ -> null } }
         assertFailsWith<ReservedTagNameException> { text.tag("My Tag") { _, _, _ -> null } }
         assertFailsWith<ReservedTagNameException> { text.tag("versatia-argument-0") { _, _, _ -> null } }
+        text.tag("serverTime") { _, _, _ -> Tag.selfClosingInserting(text("noon")) }
+        assertEquals("noon, noon", plain("<serverTime>, <servertime>"), "a tag name is one name in either case, as MiniMessage reads it")
     }
 
     @Test
@@ -198,9 +202,20 @@ class TextImplTest {
     }
 
     @Test
-    fun `braces in escaped or unknown tags stay text`() {
+    fun `braces in an escaped tag stay text, and a tag that does not exist is an error with or without braces`() {
         assertEquals("<click:x:Steve>", plain("\\<click:x:{name}>", arg("name", "Steve")))
-        assertEquals("<nope:Steve>", plain("<nope:{name}>", arg("name", "Steve")))
+        val withBrace = assertFailsWith<UnknownTagException> { text.parse("<nope:{name}>", arg("name", "Steve")) }
+        assertEquals("<nope> is neither a MiniMessage tag nor a style; plugins/VersatiaCore/styles.yml defines no styles. Write \\<nope> to show it as text", withBrace.message)
+        assertEquals(withBrace.message, assertFailsWith<UnknownTagException> { text.parse("Hello <nope>") }.message)
+        assertEquals(withBrace.message, assertFailsWith<UnknownTagException> { text.parse("Hello</nope>") }.message)
+        assertEquals("/pay <player> <amount>", plain("/pay \\<player> \\<amount>"))
+    }
+
+    @Test
+    fun `angle brackets around something that was never meant as a tag stay text`() {
+        assertEquals("I <3 you <3> <-> <--> <?> <> a < b > c <two words>", plain("I <3 you <3> <-> <--> <?> <> a < b > c <two words>"))
+        assertFailsWith<UnknownTagException> { text.parse("<#bg4>x") }
+        assertFailsWith<UnknownTagException> { text.parse("<Player>") }
     }
 
     @Test

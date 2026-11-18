@@ -49,7 +49,7 @@ object Recorder {
  * behaves like a real plugin's; with [listener] it implements `Listener` too, like a main class that
  * listens to events. The server answers that the caller runs on the main thread while
  * [primaryThread] returns true, by default on the thread creating the plugin, and its scheduler is
- * the [FakeScheduler].
+ * the [FakeScheduler]. [resources] are the files of its JAR that `getResource` finds, by path.
  */
 fun fakePlugin(
     name: String,
@@ -61,6 +61,7 @@ fun fakePlugin(
     enabledPlugins: Set<String> = emptySet(),
     installedPlugins: Set<String> = enabledPlugins,
     primaryThread: () -> Boolean = Thread.currentThread().let { creator -> { Thread.currentThread() === creator } },
+    resources: Map<String, String> = emptyMap(),
 ): Plugin {
     val logger = Logger.getLogger("test.$name")
     val componentLogger = Proxy.newProxyInstance(classLoader, arrayOf(ComponentLogger::class.java)) { _, method, _ ->
@@ -76,6 +77,7 @@ fun fakePlugin(
             "getDataFolder" -> dataFolder ?: throw UnsupportedOperationException("FakePlugin $name has no data folder")
             "getDescription", "getPluginMeta" -> PluginDescriptionFile(name, "0.0.1", main ?: throw UnsupportedOperationException("FakePlugin $name has no main class"))
             "getServer" -> server
+            "getResource" -> resources[args[0]]?.byteInputStream()
             "isEnabled" -> true
             "toString" -> "FakePlugin($name)"
             "hashCode" -> System.identityHashCode(proxy)

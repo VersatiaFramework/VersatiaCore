@@ -128,6 +128,23 @@ class Broken : Reloadable {
     override fun reload() = throw IllegalStateException("file missing")
 }
 
+/** Loaded like any [Reloadable], and told once its plugin has started. */
+internal class Ledger(val plugin: Plugin) : Reloadable, StartAware {
+    override fun reload() = Recorder.record("Ledger.reload for ${plugin.name}", this)
+
+    override fun started() = Recorder.record("Ledger.started for ${plugin.name}", this)
+}
+
+internal class Unready : StartAware {
+    override fun started() = throw IllegalStateException("a tag is missing")
+}
+
+internal object Opening {
+    fun open() = Recorder.record("Opening.open", this)
+
+    fun audit(ledger: Ledger) = Recorder.record("Opening.audit", ledger)
+}
+
 class Wallet(val ticket: Ticket) {
     init {
         Recorder.record("Wallet", this)
@@ -636,6 +653,45 @@ class BeanLoadingTest {
         enhancer.enhance(descriptor(mainClass, count), context("Beta", LifecycleEvent.RELOAD))
 
         assertEquals(listOf("Bank.reload for Beta", "Counter.count"), Recorder.names(), "the instance made for Beta loads before the function receives it")
+    }
+
+    private val ledger = element<Ledger>(BeanProcessors.EXPOSE_PROTOTYPE, dependencies = listOf(Plugin::class.qualifiedName!!), instantiator = Instantiator.Direct { Ledger(it[0] as Plugin) })
+
+    private fun opening(function: String, phase: Phase, parameters: List<String> = emptyList(), invoke: (List<Any?>) -> Unit) = EnhancedElement(
+        LifecycleProcessors.AUTO_INVOKE,
+        phase,
+        AnnotationOccurrence("test.Invoke"),
+        FunctionTarget(
+            Opening::class.qualifiedName!!, Opening::class.java.name, function, MemberOwner.OBJECT, emptyList(),
+            parameters.map { Parameter(it) }, Invoker.Direct { _, args -> invoke(args) },
+        ),
+    )
+
+    @Test
+    fun `a StartAware bean is told once, after the start functions, and one obtained later as soon as it is loaded`() {
+        val open = opening("open", Phase.PLUGIN_START_ONLY) { Opening.open() }
+        enhancer.enhance(descriptor(mainClass, ledger, open), context("Alpha"))
+        assertEquals(listOf("Ledger.reload for Alpha", "Opening.open", "Ledger.started for Alpha"), Recorder.names(), "whatever the start functions register is in place by then")
+
+        Recorder.reset()
+        enhancer.enhance(descriptor(mainClass, ledger, open), context("Alpha", LifecycleEvent.RELOAD))
+        assertEquals(listOf("Ledger.reload for Alpha"), Recorder.names(), "a reload starts nothing again")
+
+        enhancer.enhance(descriptor(mainClass), context("Beta"))
+        Recorder.reset()
+        val audit = opening("audit", Phase.PLUGIN_RELOAD_ONLY, listOf(Ledger::class.qualifiedName!!)) { Opening.audit(it[0] as Ledger) }
+        enhancer.enhance(descriptor(mainClass, audit), context("Beta", LifecycleEvent.RELOAD))
+        assertEquals(listOf("Ledger.reload for Beta", "Ledger.started for Beta", "Opening.audit"), Recorder.names())
+    }
+
+    @Test
+    fun `a StartAware bean that fails fails the start, naming the plugin and the bean`() {
+        val unready = element<Unready>(BeanProcessors.LOCAL, instantiator = Instantiator.Direct { Unready() })
+
+        val error = assertFailsWith<EnhancementException> { enhancer.enhance(descriptor(mainClass, unready), context("Alpha")) }
+
+        assertEquals("Plugin Alpha: ${Unready::class.qualifiedName} failed its check at the end of the start", error.message)
+        assertEquals("a tag is missing", error.cause?.message)
     }
 
     private val pool = element<Pool>(BeanProcessors.EXPOSE_PROTOTYPE, dependencies = listOf(Plugin::class.qualifiedName!!), instantiator = Instantiator.Direct { Pool(it[0] as Plugin) })

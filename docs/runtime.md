@@ -261,6 +261,16 @@ is reloaded as soon as it is adopted. A throwing `reload()` is wrapped as
 `Plugin X: <class> failed to reload`. Exposed singletons are adopted by their owner only, so a
 consumer's reload never touches them.
 
+`StartAware` (package `di`, internal to VersatiaCore) is the second hook of an adopted instance:
+`started()` is called once the start functions have run, for a bean that must see what they
+register, which is how `MessagesImpl` checks the tags of its messages against those a start
+function adds; see [messages.md](messages.md). The completion action that creates and loads the
+beans registers `completeStart` as one more action, and actions registered while the others run
+are run after them, so it follows every action of the first round, the auto-invoke processor's
+included, whatever the order of the descriptor. An instance adopted after that is told right
+after its first `reload()`. A throwing `started()` fails the start as
+`Plugin X: <class> failed its check at the end of the start`.
+
 ### Resolution rules
 
 For every `Dependency` (a type `T` and an optional qualifier) of a bean or an `@AutoInvoke` function:
@@ -342,7 +352,8 @@ the type it is injected as.
 | `task.PluginScopeBean`            | exposed prototype | `PluginScope` (and `CoroutineScope`)        | a scope of its own, see [`PluginScopeBean`](#pluginscopebean) |
 | `PluginLoggerBean`                | exposed prototype | `java.util.logging.Logger`                  | `plugin.logger`         |
 | `PluginComponentLoggerBean`       | exposed prototype | `ComponentLogger` (and `org.slf4j.Logger`)  | `plugin.componentLogger` |
-| `text.TextImpl`                   | exposed prototype | `Text`                                      | a parser of its own, see [messages.md](messages.md) |
+| `text.ServerStyles`               | local            | (`TextImpl`'s argument, the same for every consumer) | `styles.yml` in VersatiaCore's data folder, see [messages.md](messages.md#styles) |
+| `text.TextImpl`                   | exposed prototype | `Text`                                      | a parser of its own over the shared styles, see [messages.md](messages.md) |
 | `messages.MessagesImpl`           | exposed prototype | `Messages`                                  | the consumer's `messages/` folder and its `Text`, see [messages.md](messages.md) |
 
 Each prototype takes the consuming `Plugin`, so a module prototype that takes a `Logger` gets the

@@ -1,0 +1,32 @@
+# The styles shared by every Versatia plugin on this server: a name, and the MiniMessage it stands for.
+# A message uses a style as a tag: "<positive>Quest done." Change a style here and every message
+# using it changes with it.
+#
+# VersatiaCore defines the names every plugin uses, below these comments:
+#
+#   neutral, positive, negative, warning   the tone a chat message opens with
+#   accent                                 what matters most; every value a message fills in takes it
+#   hint                                   what matters least, or what to do next
+#   label, heading                         the name before a value; the title of a list or of a page
+#   serverTag                              the tag in front of the server's chat messages
+#
+# The tag is a style that holds text. It is empty, so messages show none, until you write yours,
+# with the space that follows it:
+#
+#   serverTag: "<gold><bold>[Realm]</bold></gold> "
+#
+# A section is a scope. Its "style" is the section's own style; its other names apply only inside
+# that tag, where the nearest scope wins:
+#
+#   warning:
+#     style: "<yellow>"
+#     accent: "<gold>"        # <accent>, and every value, inside <warning>
+#
+# A dotted key says the same on one line: warning.accent: "<gold>"
+#
+# The game's own things take the style named after them instead of the accent, once you define
+# one here: player, entity, item, location, world.
+#
+# Plugins add the styles of their own below, each under a comment naming the plugin. Edit them
+# here, then run /versatia reload. A deleted style comes back; to switch one off, leave it empty:
+# hint: ""    See https://versatia.dev/admin/messages#styles

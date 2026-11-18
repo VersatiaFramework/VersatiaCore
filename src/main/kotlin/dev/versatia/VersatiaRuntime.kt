@@ -1,11 +1,12 @@
 package dev.versatia
 
+import dev.versatia.di.DefaultBeans
 import dev.versatia.di.ExposedBeanRegistry
-import dev.versatia.engine.command.CommandText.plain
 import dev.versatia.engine.descriptor.DescriptorLoader
 import dev.versatia.engine.descriptor.PluginTarget
 import dev.versatia.engine.descriptor.VersatiaPluginDescriptor
 import dev.versatia.engine.descriptor.occurrenceOf
+import kotlin.reflect.KClass
 import org.bukkit.plugin.Plugin
 
 /**
@@ -25,6 +26,7 @@ class VersatiaRuntime(
     debugLog: DebugLog? = null,
 ) : VersatiaEngine, AutoCloseable {
     override val registry = EnhancedPlugins()
+    private val defaultBeans = states.runtime.getOrPut(DefaultBeans.KEY) { DefaultBeans() }
     private val starting = HashMap<Plugin, DefaultEnhancementContext>()
     private val reloading = HashMap<Plugin, DefaultEnhancementContext>()
     private var cascade: Cascade? = null
@@ -49,6 +51,8 @@ class VersatiaRuntime(
         }
         if (context.cancelled) registry.unregister(plugin) else registry.register(plugin)
     }
+
+    override fun <T : Any> defaultBean(plugin: Plugin, type: KClass<T>) = defaultBeans.of(plugin, type)
 
     /** Reloads [plugin] and the plugins using its beans; a failure of [plugin] is thrown, one of the others logged. */
     override fun reload(plugin: Plugin) {

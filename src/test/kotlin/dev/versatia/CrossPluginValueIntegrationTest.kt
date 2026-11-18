@@ -2,7 +2,6 @@ package dev.versatia
 
 import dev.versatia.config.PreviousValueTracking
 import dev.versatia.di.BeanResolver
-import dev.versatia.engine.command.CommandText.plain
 import dev.versatia.engine.command.PluginInfo
 import dev.versatia.engine.descriptor.VersatiaPluginDescriptor
 import dev.versatia.ksp.VersatiaSymbolProcessorProvider

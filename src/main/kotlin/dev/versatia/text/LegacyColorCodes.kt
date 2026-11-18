@@ -1,4 +1,4 @@
-package dev.versatia.messages
+package dev.versatia.text
 
 /**
  * Finds the legacy colour codes, `&a` or `§l`, that MiniMessage shows as text. A code counts at the

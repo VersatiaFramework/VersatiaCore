@@ -12,9 +12,27 @@ import org.bukkit.entity.Entity
 import org.bukkit.entity.Player
 import org.bukkit.inventory.ItemStack
 
-/** What is shown without any registration; a plugin's own registrations take precedence. */
+/**
+ * What is shown without any registration; a plugin's own registrations take precedence. The
+ * presentations of the game's own things are shown in the server's style named after the type,
+ * [STYLES], when it defines one, so a player's name looks the same in every message, and like
+ * every other value in [ACCENT] when it does not.
+ */
 internal object BuiltInPresentations {
-    private val SEPARATOR = JoinConfiguration.separator(text(", "))
+    /** Joins the elements of a collection. */
+    val SEPARATOR = JoinConfiguration.separator(text(", "))
+
+    const val PLAYER = "player"
+    const val ENTITY = "entity"
+    const val ITEM = "item"
+    const val LOCATION = "location"
+    const val WORLD = "world"
+
+    /** The style of every value whose type has none on this server: what a message inserts stands out by itself. */
+    const val ACCENT = "accent"
+
+    /** The style names the presentations here ask for. */
+    val STYLES = setOf(PLAYER, ENTITY, ITEM, LOCATION, WORLD)
 
     /** Asked after every specific built-in, so a Player or an ItemStack that is also Translatable keeps its own. */
     private val generic = Presenters().apply {
@@ -23,18 +41,17 @@ internal object BuiltInPresentations {
 
     /**
      * Iterables and object arrays, which are not registered so that a plugin's own presentation of
-     * a collection type wins: the elements joined with `, `, each shown by [element] with its index.
+     * a collection type wins: the elements are shown joined with [SEPARATOR], each as a value of
+     * its own.
      */
-    fun collection(value: Any, element: (Int, Any?) -> Component): Presentation? {
-        val elements = when (value) {
-            is Iterable<*> -> value.toList()
-            is Array<*> -> value.asList()
-            else -> return null
-        }
-        return presentation {
-            component { Component.join(SEPARATOR, elements.mapIndexed(element)) }
-            property("size") { elements.size }
-        }
+    class Elements(val elements: List<Any?>) {
+        val properties: Map<String, () -> Any?> = mapOf("size" to { elements.size })
+    }
+
+    fun elements(value: Any) = when (value) {
+        is Iterable<*> -> Elements(value.toList())
+        is Array<*> -> Elements(value.asList())
+        else -> null
     }
 
     val presenters = Presenters(generic).apply {
@@ -44,7 +61,7 @@ internal object BuiltInPresentations {
                 property("plain") { PlainTextComponentSerializer.plainText().serialize(component) }
             }
         }
-        register(Entity::class) { entity ->
+        register(Entity::class, ENTITY) { entity ->
             presentation {
                 component { entity.name() }
                 property("name") { entity.name() }
@@ -54,7 +71,7 @@ internal object BuiltInPresentations {
                 property("world") { entity.world }
             }
         }
-        register(Player::class) { player ->
+        register(Player::class, PLAYER) { player ->
             presentation {
                 component { player.displayName() }
                 property("name") { player.name }
@@ -69,14 +86,14 @@ internal object BuiltInPresentations {
                 property("world") { player.world }
             }
         }
-        register(OfflinePlayer::class) { player ->
+        register(OfflinePlayer::class, PLAYER) { player ->
             presentation {
                 component { text(player.name ?: player.uniqueId.toString()) }
                 property("name") { player.name }
                 property("uuid") { player.uniqueId }
             }
         }
-        register(ItemStack::class) { item ->
+        register(ItemStack::class, ITEM) { item ->
             presentation {
                 component { item.effectiveName() }
                 property("name") { item.effectiveName() }
@@ -86,7 +103,7 @@ internal object BuiltInPresentations {
                 property("maxStackSize") { item.maxStackSize }
             }
         }
-        register(Location::class) { location ->
+        register(Location::class, LOCATION) { location ->
             presentation {
                 component { text("${location.blockX}, ${location.blockY}, ${location.blockZ}") }
                 property("x") { location.x }
@@ -100,7 +117,7 @@ internal object BuiltInPresentations {
                 property("world") { location.world }
             }
         }
-        register(World::class) { world ->
+        register(World::class, WORLD) { world ->
             presentation {
                 component { text(world.name) }
                 property("name") { world.name }
