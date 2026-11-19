@@ -196,7 +196,11 @@ class TextStylesTest {
         assertEquals(listOf("By " to null, "Steve" to NamedTextColor.YELLOW), shownColours(hover))
 
         text.present<Player> { presentation { component { text("someone") } } }
-        assertEquals(listOf("someone joined" to null), shownColours(text.parse("{p} joined", steve)), "a plugin's own presentation is shown as the plugin made it")
+        assertEquals(
+            listOf("someone" to NamedTextColor.YELLOW, " joined" to null),
+            shownColours(text.parse("{p} joined", steve)),
+            "a plugin's own component keeps the style of its type",
+        )
     }
 
     @Test

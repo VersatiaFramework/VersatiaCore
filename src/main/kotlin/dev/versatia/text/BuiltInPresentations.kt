@@ -13,10 +13,11 @@ import org.bukkit.entity.Player
 import org.bukkit.inventory.ItemStack
 
 /**
- * What is shown without any registration; a plugin's own registrations take precedence. The
- * presentations of the game's own things are shown in the server's style named after the type,
- * [STYLES], when it defines one, so a player's name looks the same in every message, and like
- * every other value in [ACCENT] when it does not.
+ * What is shown without any registration; the server's presentations and a plugin's own come
+ * first, and what they leave out is taken from here. The presentations of the game's own things
+ * are shown in the server's style named after the type, [STYLES], when it defines one, so a
+ * player's name looks the same in every message, and like every other value in [ACCENT] when it
+ * does not.
  */
 internal object BuiltInPresentations {
     /** Joins the elements of a collection. */
@@ -54,7 +55,7 @@ internal object BuiltInPresentations {
         else -> null
     }
 
-    val presenters = Presenters(generic).apply {
+    val presenters = Presenters(fallback = generic).apply {
         register(Component::class) { component ->
             presentation {
                 component { component }

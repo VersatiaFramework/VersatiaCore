@@ -39,7 +39,7 @@ class PluginInfo(private val runtime: VersatiaRuntime) {
         }
     }
 
-    /** `Shop 0.0.1 (descriptor format 1.0)`, with the `plugin.yml` name inside the brackets when the friendly name differs. */
+    /** `Shop 0.0.1 (descriptor format 1.1)`, with the `plugin.yml` name inside the brackets when the friendly name differs. */
     private fun headline(name: String, plugin: Plugin): Reply {
         val values = arrayOf(arg("name", name), arg("version", plugin.pluginMeta.version), arg("plugin", plugin.name), arg("format", DescriptorLoader.load(plugin).run { "$formatMajor.$formatMinor" }))
         return if (name == plugin.name) Reply("<neutral><heading>{name}</heading> {version} (descriptor format {format})", *values)

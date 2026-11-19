@@ -1,5 +1,6 @@
 package dev.versatia.testsupport
 
+import dev.versatia.text.ServerPresentations
 import dev.versatia.text.ServerStyles
 import dev.versatia.text.TextImpl
 import java.io.File
@@ -30,8 +31,12 @@ internal fun serverStyles(server: File = File("build/tmp/no-server"), content: S
 internal fun pluginWithStyles(name: String, defaults: String? = null): Plugin =
     fakePlugin(name, resources = listOfNotNull(defaults?.let { ServerStyles.FILE to it.trimIndent() }).toMap())
 
-/** The `Text` made for the plugin [name] over [styles]; [defaults] is the `styles.yml` that plugin ships, handed over by `reload()`. */
-internal fun textOf(styles: ServerStyles = serverStyles(), name: String = "Shop", defaults: String? = null) = TextImpl(styles, pluginWithStyles(name, defaults))
+/**
+ * The `Text` made for the plugin [name] over [styles] and the presentations of [server]; [defaults]
+ * is the `styles.yml` that plugin ships, handed over by `reload()`.
+ */
+internal fun textOf(styles: ServerStyles = serverStyles(), name: String = "Shop", defaults: String? = null, server: ServerPresentations = ServerPresentations()) =
+    TextImpl(styles, server, pluginWithStyles(name, defaults))
 
 /**
  * The text of [component] in pieces, each with the colour a player sees it in, whatever the

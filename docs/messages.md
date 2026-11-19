@@ -12,22 +12,25 @@ of its own:
 - `TextImpl`, the parser behind `Text`. The presentations and tags a plugin registers never leak
   into another plugin, and they vanish when that plugin is disabled, because the instance belongs
   to the consumer's bean session. The built-in presentations (`BuiltInPresentations`) are one
-  shared `Presenters` used as the fallback of every instance. It takes the consuming `Plugin` and
-  VersatiaCore's `ServerStyles`.
+  shared `Presenters` used as the fallback of every instance. It takes the consuming `Plugin`,
+  VersatiaCore's `ServerStyles` and VersatiaCore's `ServerPresentations`.
 - `MessagesImpl`, the bank behind `Messages`, taking the consuming `Plugin` and its `Text`. The
   runtime hands every consumer an instance made with its own plugin, whose `messages/` directory is
   read, and the `Text` instance made for that consumer, the same one its own beans inject, so the
   presentations the consumer registered apply to its messages.
 
 Nothing about them is kept in VersatiaCore itself: every instance belongs to the consumer's bean
-session, and a plugin that never injects them never has one. The one thing the plugins share is
-`ServerStyles`, a `@LocalBean` of VersatiaCore that every `TextImpl` receives as the owner's
-argument: the styles of `plugins/VersatiaCore/styles.yml`; see [Styles](#styles).
+session, and a plugin that never injects them never has one. What the plugins share are two
+`@LocalBean`s of VersatiaCore that every `TextImpl` receives as the owner's arguments:
+`ServerStyles`, the styles of `plugins/VersatiaCore/styles.yml` (see [Styles](#styles)), and
+`ServerPresentations`, what the `@ServerPresentation` beans of the running plugins present (see
+[Server presentations](#server-presentations)).
 
 ## Two packages
 
 The packages mirror the API's. `dev.versatia.text` holds the parser (`TextImpl`,
-`ArgumentResolver`, `Substitution`, `Presenters`, `BuiltInPresentations`, `LegacyColorCodes`) and
+`ArgumentResolver`, `Substitution`, `Presenters`, `BuiltInPresentations`, `LegacyColorCodes`), the
+presentations of the server (`ServerPresentations`, `ServerPresentationEnhancementProcessor`) and
 the styles (`ServerStyles`, `StyleFile`, `StyleSheet`, `StyleSnippet`, `TagNames`), and never
 refers to `messages`; `dev.versatia.messages` holds the bank (`MessagesImpl`, `MessageLoader`,
 `MessageImpl`) and reaches the parser through the `Text` interface and its Core-internal extension
@@ -134,12 +137,13 @@ its name, and a style tag takes no arguments.
 
 A value takes a style by itself. `ArgumentResolver` renders a brace into a `Rendered`, the
 components with the style names each may take (a collection keeps them per element), once per
-call: the name a presentation is registered with in `Presenters`, a built-in one after its type
-(`player`, also an `OfflinePlayer`, `entity`, `item`, `location`, `world`) and a plugin's own with
-the `style` it passes to `Text.present` or the `style` a `Presentable` answers; `Presenters`
-checks either with `StyleFile.objection`, once per name. Then `accent`, which every value takes:
-a text, a number, a `ComponentLike`, a presentation without a style; what a value formats itself
-wins, as Adventure's children do. Tags holding a value alone win instead: every brace inserts its
+call: the style of its `Presented.look()`, a built-in one after its type
+(`player`, also an `OfflinePlayer`, `entity`, `item`, `location`, `world`), a plugin's own with
+the `style` it passes to `Text.present`, the `style` a `Presentable` answers or the `style` of a
+`@ServerPresentation`; `Presenters` checks a plugin's with `StyleFile.objection`, once per name,
+and the processor a server presentation's at the start. Then `accent`, which every value takes:
+a text, a number, a `ComponentLike`, a value none of whose presentations names a style; what a
+value formats itself wins, as Adventure's children do. Tags holding a value alone win instead: every brace inserts its
 value inside a mark (`ValueMarks`, an insertion only it writes), MiniMessage builds the tree without
 compacting it (`TextImpl.READER`), and `ValueMarks.settle` walks it, gathers the colour, decorations
 and font of the chain of empty components with a single child above each mark, sets them on the
@@ -172,18 +176,28 @@ style that holds text, written self-closing in front of a message and shipped em
 they are in the server file before another plugin starts, a plugin's default for one of them is
 never used, and a deleted one comes back at VersatiaCore's next start or reload.
 
-A value that is `Presentable` describes itself; otherwise `Presenters.of` picks, among the types
-registered on the instance that the value is an instance of, the one no other candidate is a
-subtype of, and falls back to the built-ins. Registering a type again replaces its entry, since
-two entries of one type would rule each other out. The built-ins have a fallback of their own
+`Presenters.of` gathers every presentation of a value into a `Presented`, in layers: the value's
+own when it is `Presentable`; then the server's presentations in use and those registered on the
+instance, together, ordered so that a type comes before its supertypes and otherwise as given,
+the server's first (so a server presentation wins over the plugin's own of the same type); then
+the built-ins, ordered the same way, and their fallback. `Presented` makes a layer's
+`Presentation` only when a part is looked for in it and answers the component, the style and each
+property from the first layer defining it, so a presentation that defines one property leaves the
+component, the style and the other properties to the layers after it: `look()` gives the first
+component with the first style any layer names, so a plugin's own component for `Player` without
+a style keeps `player`, and a layer naming a style alone restyles the component of a later one.
+A value matching nothing has no `Presented`. Registering a type again replaces its entry, since two
+entries of one type would rule each other out. The built-ins have a fallback of their own
 holding Adventure's `Translatable`, which inserts `Component.translatable(value)` so the client
 shows `Material`, `EntityType`, `GameMode` and the like in the viewer's language; being a level
 below, it never beats a specific built-in such as `Entity` or `ItemStack`, even for a value that
 implements both without one extending the other. Iterables and object arrays are not registered
-at all: when no presenter answers, `ArgumentResolver` asks `BuiltInPresentations.elements`, and
+at all: when no layer has a component, `ArgumentResolver` asks `BuiltInPresentations.elements`, and
 the elements are joined with `, `, each rendered through the instance's own chain (an element
-without a component fails as `{name[index]}`), with `size` as the one property; so a plugin's
-registration for `List` still wins. Nothing language-dependent is built in (no durations, dates or number formats). Argument names are
+without a component fails as `{name[index]}`), with `size` as the one property, also under a
+presentation that does not define it; so a plugin's registration for `List` still wins. A value
+some layer presents but none gives a component, and that is no collection, fails with
+`NoTextFormException`. Nothing language-dependent is built in (no durations, dates or number formats). Argument names are
 letters, digits, `_` and `-`, checked when the `Argument` is created, with one pattern shared by
 argument and property names; an argument given twice is a `DuplicateArgumentException`. Tag names
 are checked against the MiniMessage tag-name syntax, the standard tags and the private placeholder
@@ -193,6 +207,37 @@ prefix, so `<color>` can never be shadowed and a tag can never shadow a brace.
 registration, and the registered tags are a concurrent map, so a plugin may register while another
 thread parses. Thread safety stops at the presentations: the built-in ones read Bukkit state
 (`entity.location`, `world.players`), which is safe on the main thread only.
+
+## Server presentations
+
+`ServerPresentations`, a `@LocalBean` of VersatiaCore, holds what the `@ServerPresentation` beans
+of the running plugins offer: per offer the owning plugin, the bean class, whether it is
+`@Primary`, and a `TypePresentation` (the presented class, the style and the presenter). Of the
+offers of one type one is in use: the only one, or the single `@Primary` one, or, when the
+`@Primary` one was withdrawn and several remain, the one offered first. An offer that would leave
+a type with several offers and not exactly one `@Primary` among them is refused as a whole with
+an `IllegalArgumentException` naming every competitor. The offers and the list in use are
+immutable lists in volatile fields, replaced under a lock, so `matching` runs on any thread.
+
+`ServerPresentationEnhancementProcessor` interprets the elements of `@ServerPresentation`, which
+inherits `@LocalBean`, so the same `ClassTarget` is also a bean of the plugin. At start, once
+every processor has seen the plugin's elements and the beans exist, before the start functions
+run, it takes each bean instance as a `Presenter`, loads the presented class from the argument of
+the `Presenter` supertype among the target's `genericSupertypes` (a Kotlin qualified name, through
+`engine.descriptor.loadDescribedType`), reads the style from the annotation's `style` argument
+(empty for none, checked with `StyleFile.objection`) and `@Primary` from the class's attributes,
+and offers them all at once; a refused offer fails the start with the plugin's name in front. It
+reaches `ServerPresentations` through the plugin's own `Text`, resolved through its beans like any
+dependency (VersatiaCore makes one for every plugin with beans), and fails when that `Text` is not
+a `TextImpl`. The offer is withdrawn by an `AutoCloseable` entry the processor puts into the
+plugin's state, closed when the state is dropped: at stop, after the stop functions and before the
+plugin's beans are closed, and also when the start fails after the offer. A reload touches
+nothing: the bean, and so its presentation, lives as long as the plugin.
+
+A presenter runs in the parse of whichever plugin shows the value, on that thread; what it throws
+is a `PresentationException` of that parse like any presentation's. The descriptor records the
+presented type as a fact about the class (its generic supertypes with their type arguments), so
+the runtime never reads generic signatures by reflection.
 
 ## Loading and reloading
 
@@ -261,6 +306,16 @@ stub and an `Entity` proxy). `MessagesImplTest` drives the bank
 through a `Plugin` proxy and checks that a failing reload keeps the previous messages;
 `MissingMessageExceptionTest` covers the error text. Nothing needs a server. The Bukkit presentations (`Player`, `ItemStack`, ...) cannot be
 constructed outside a server and are not unit-tested; the style of one is, through a `Player` proxy.
+
+`ServerPresentationsTest` gives two texts one `ServerPresentations` and checks the layers: the
+server's presentation winning over a plugin's own of the same type, every part it leaves out
+coming from the next layer (the built-in `Player` component, properties and style under a
+presentation adding one property), the nearest type across the server and the plugin
+(`OfflinePlayer` covering `Player`), and competing offers (refused without a single `@Primary`,
+the first one back in use when the `@Primary` one is withdrawn). `ServerPresentationIntegrationTest`
+compiles providers with the real KSP processor and runs them through the runtime: a provider's
+property reaching a plugin that started before it, kept by a reload and gone with the stop, and
+a second provider of the same type failing its start unless it is `@Primary`.
 
 `StyleFileTest` covers the format (scopes, dotted keys, every load error) and the text of what is
 added for a plugin; `TextStylesTest` what styles come to in a parse, compared with the same text

@@ -2,6 +2,7 @@ package dev.versatia.config
 
 import dev.versatia.EnhancementException
 import dev.versatia.engine.descriptor.TypeReference
+import dev.versatia.engine.descriptor.loadDescribedType
 import dev.versatia.util.config.ConfigurationValueException
 import dev.versatia.util.config.getBooleanListOrThrow
 import dev.versatia.util.config.getBooleanOrThrow
@@ -93,17 +94,10 @@ internal class ValueReader(private val classLoader: ClassLoader) {
     }
 
     /** Loads a class by its Kotlin qualified name, trying the binary names a nested class may have. */
-    private fun loadClass(qualifiedName: String): Class<*> {
-        var name = qualifiedName
-        while (true) {
-            try {
-                return Class.forName(name, false, classLoader)
-            } catch (e: ClassNotFoundException) {
-                val dot = name.lastIndexOf('.')
-                if (dot < 0) throw EnhancementException("$qualifiedName cannot be loaded: ${e.message}", e)
-                name = name.substring(0, dot) + "$" + name.substring(dot + 1)
-            }
-        }
+    private fun loadClass(qualifiedName: String): Class<*> = try {
+        loadDescribedType(qualifiedName, classLoader)
+    } catch (e: ClassNotFoundException) {
+        throw EnhancementException("$qualifiedName cannot be loaded: ${e.cause?.message ?: e.message}", e)
     }
 
     internal companion object {

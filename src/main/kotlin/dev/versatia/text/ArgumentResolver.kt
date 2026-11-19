@@ -100,29 +100,31 @@ internal class ArgumentResolver(
         var path = name
         var value = values[name]
         for (property in properties) {
-            if (value == null) throw NullValueException(path, property)
-            val available = propertiesOf(path, value)
-            val getter = available[property] ?: throw UnknownPropertyException(path, property, available.keys)
+            val getter = propertyOf(path, value ?: throw NullValueException(path, property), property)
             path = "$path.$property"
             value = shown(path) { getter() }
         }
         return render(path, value)
     }
 
-    private fun propertiesOf(path: String, value: Any) =
-        shown(path) { presenters.of(value) }?.presentation?.properties ?: BuiltInPresentations.elements(value)?.properties ?: emptyMap()
+    /** The getter of [property]: the first presentation of [value] defining it, then a collection's own properties. */
+    private fun propertyOf(path: String, value: Any, property: String): () -> Any? {
+        val presented = shown(path) { presenters.of(value) }
+        val elements = BuiltInPresentations.elements(value)?.properties.orEmpty()
+        return shown(path) { presented?.property(property) } ?: elements[property]
+            ?: throw UnknownPropertyException(path, property, shown(path) { presented?.properties.orEmpty() } + elements.keys)
+    }
 
     // Presenters come first, so a registration for String or Number applies to the bare brace too
     private fun render(path: String, value: Any?): Rendered {
         if (value == null) return Rendered.NOTHING
         val presented = shown(path) { presenters.of(value) }
-        if (presented != null) {
-            val component = presented.presentation.component ?: throw NoTextFormException(path, presented.presentation.properties.keys)
-            return Rendered.Value(shown(path, component), stylesOf(presented.style))
-        }
+        val look = shown(path) { presented?.look() }
+        if (look != null) return Rendered.Value(shown(path, look.component), stylesOf(look.style))
         val collection = BuiltInPresentations.elements(value)
         return when {
             collection != null -> Rendered.Elements(collection.elements.mapIndexed { index, element -> render("$path[$index]", element) })
+            presented != null -> throw NoTextFormException(path, shown(path) { presented.properties })
             value is ComponentLike -> Rendered.Value(value.asComponent(), stylesOf())
             else -> Rendered.Value(Component.text(value.toString()), stylesOf())
         }

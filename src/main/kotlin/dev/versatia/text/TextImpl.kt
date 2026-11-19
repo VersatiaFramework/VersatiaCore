@@ -16,16 +16,16 @@ internal interface CheckingText : Text {
 }
 
 /**
- * One per consuming plugin: its presentations and tags are its own, the built-in presentations
- * and the [styles] of the server are shared. At the start and at every reload of [plugin] its
- * default styles are handed to the server's, before its messages are read. A text without braces
- * and registered tags always parses to the same component, so the last [CONSTANTS] of them are
- * kept; registering a tag or a change of the styles drops them.
+ * One per consuming plugin: its presentations and tags are its own, the built-in presentations,
+ * the presentations of the [server] and its [styles] are shared. At the start and at every reload
+ * of [plugin] its default styles are handed to the server's, before its messages are read. A text
+ * without braces and registered tags always parses to the same component, so the last [CONSTANTS]
+ * of them are kept; registering a tag or a change of the styles drops them.
  */
 @ExposePrototype
-internal class TextImpl(private val styles: ServerStyles, private val plugin: Plugin) : CheckingText, Reloadable {
+internal class TextImpl(private val styles: ServerStyles, val server: ServerPresentations, private val plugin: Plugin) : CheckingText, Reloadable {
     override val miniMessage: MiniMessage = MiniMessage.miniMessage()
-    private val presenters = Presenters(BuiltInPresentations.presenters)
+    private val presenters = Presenters(server, BuiltInPresentations.presenters)
     private val tags: MutableMap<String, ArgumentTag> = ConcurrentHashMap()
 
     @Volatile

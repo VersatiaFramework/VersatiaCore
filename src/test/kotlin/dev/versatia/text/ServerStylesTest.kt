@@ -28,7 +28,7 @@ class ServerStylesTest {
     """
 
     /** Starts the plugin [name] as far as styles go: its `Text` hands over the defaults it ships. */
-    private fun start(styles: ServerStyles, name: String, defaults: String?) = TextImpl(styles, pluginWithStyles(name, defaults)).reload()
+    private fun start(styles: ServerStyles, name: String, defaults: String?) = TextImpl(styles, ServerPresentations(), pluginWithStyles(name, defaults)).reload()
 
     @Test
     fun `the file is read at every reload, and one that cannot be read keeps the styles in use`() {
@@ -63,7 +63,7 @@ class ServerStylesTest {
         val shop = pluginWithStyles("Shop", shopDefaults)
 
         val logged = shop.captureLog().use { log ->
-            TextImpl(styles, shop).reload()
+            TextImpl(styles, ServerPresentations(), shop).reload()
             log.messages(Level.INFO)
         }
 
@@ -72,7 +72,7 @@ class ServerStylesTest {
         assertEquals(mapOf("accent" to "<yellow>", "success" to "<green>", "success.accent" to "<#b4ff9a>"), styles.sheet.paths)
         assertEquals(listOf("Added the default styles success, success.accent to plugins/VersatiaCore/styles.yml"), logged)
 
-        TextImpl(styles, shop).reload()
+        TextImpl(styles, ServerPresentations(), shop).reload()
         assertEquals(withShop, file.readText(), "a second start adds nothing")
     }
 

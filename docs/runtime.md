@@ -154,7 +154,7 @@ is logged by VersatiaCore at `INFO`, as `[debug] <plugin> <EVENT>: <step>`:
 
 | Step | Written by | Line |
 |---|---|---|
-| descriptor | `PluginEnhancer` | `descriptor format 1.0, 12 elements, 7 for this event` |
+| descriptor | `PluginEnhancer` | `descriptor format 1.1, 12 elements, 7 for this event` |
 | skipped element | `PluginEnhancer` | `skipped VaultBridge: @ConditionalOnPlugin(Vault) is not met` (at every event, unlike the `INFO` line at start) |
 | dispatch | `PluginEnhancer` | `AutoInvokeEnhancementProcessor receives Reports.report(), Shop.open()` |
 | beans | `PluginBeanSession` | `created 3 beans: "plugin" (...), ...` and `exposes "prices" (...) as exposed prototype` |
@@ -211,7 +211,7 @@ VersatiaCore itself is in the registry, so a full reload includes it: it restore
 
 `/versatia info [plugin]`, behind `versatia.core.command.info` (default op), is read-only.
 Without an argument it lists the running Versatia plugins, one line each:
-`shop (Shop 1.2.0), descriptor format 1.0`. With a friendly name it adds the plugin's beans
+`shop (Shop 1.2.0), descriptor format 1.1`. With a friendly name it adds the plugin's beans
 (`  "prices" com.example.PriceList, exposed prototype`), `Exposed beans used by others: "prices" by
 Auction`, `Reloads cascade to: Auction` and `@Value files: config.yml`, each `none` when empty.
 `PluginInfo` gathers the lines without CommandAPI types: the registry, the plugin's bean session
@@ -497,6 +497,16 @@ ValueEnhancementProcessor to supply parameter N, which it has not` otherwise), a
 registered with `onInstanceCreated` run right after the constructor, before the instance is
 returned, so before it is registered or first runs. Each instance is registered through
 `plugin.server.pluginManager.registerEvents`; Bukkit unregisters them on disable.
+
+## Server presentations (`text`)
+
+`ServerPresentationEnhancementProcessor` receives the `ClassTarget`s of `@ServerPresentation`,
+which inherits `@LocalBean`, so the bean session creates the same classes as beans. In a completion
+action of the start event it offers every bean instance, with the type its `genericSupertypes`
+record for `Presenter`, to VersatiaCore's `ServerPresentations`, all of them or none, and keeps an
+`AutoCloseable` in the plugin state that withdraws them when the state is dropped, at stop or after
+a failed start. A refused offer fails the start; reloads touch nothing. See
+[messages.md](messages.md#server-presentations).
 
 ## Tasks (`task`)
 

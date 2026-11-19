@@ -26,6 +26,7 @@ import dev.versatia.testsupport.fakePlugin
 import dev.versatia.testsupport.stylesFile
 import dev.versatia.testsupport.testContext
 import dev.versatia.text.CheckingText
+import dev.versatia.text.ServerPresentations
 import dev.versatia.text.ServerStyles
 import dev.versatia.text.Text
 import dev.versatia.text.TextImpl
@@ -60,6 +61,7 @@ class TextStylesIntegrationTest {
 
     private val plugin = Plugin::class.qualifiedName!!
     private val styles = ServerStyles::class.java.name
+    private val presentations = ServerPresentations::class.java.name
     private val checkingText = CheckingText::class.java.name
 
     /** The text beans of VersatiaCore: its styles, and the `Text` and `Messages` made for every plugin. */
@@ -70,10 +72,15 @@ class TextStylesIntegrationTest {
             ClassTarget(styles, listOf(styles, Reloadable::class.java.name), emptyList(), listOf(Parameter(plugin)), Instantiator.Direct { args -> ServerStyles(args[0] as Plugin) }),
         ),
         EnhancedElement(
+            BeanProcessors.LOCAL, Phase.PLUGIN_START_ONLY, AnnotationOccurrence(LocalBean::class.java.name),
+            ClassTarget(presentations, listOf(presentations), emptyList(), emptyList(), Instantiator.Direct { ServerPresentations() }),
+        ),
+        EnhancedElement(
             BeanProcessors.EXPOSE_PROTOTYPE, Phase.PLUGIN_START_ONLY, AnnotationOccurrence(ExposePrototype::class.java.name),
             ClassTarget(
                 TextImpl::class.java.name, listOf(TextImpl::class.java.name, checkingText, Text::class.java.name, Reloadable::class.java.name), emptyList(),
-                listOf(Parameter(styles), Parameter(plugin)), Instantiator.Direct { args -> TextImpl(args[0] as ServerStyles, args[1] as Plugin) },
+                listOf(Parameter(styles), Parameter(presentations), Parameter(plugin)),
+                Instantiator.Direct { args -> TextImpl(args[0] as ServerStyles, args[1] as ServerPresentations, args[2] as Plugin) },
             ),
         ),
         EnhancedElement(
