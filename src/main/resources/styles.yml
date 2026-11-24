@@ -2,7 +2,9 @@
 # plugins/VersatiaCore/styles.yml whenever it starts or reloads; what that file defines wins.
 
 # The tone a chat message opens with
-neutral: "<gray>"
+neutral:
+  style: "<yellow>"
+  accent: "<gold>"
 positive:
   style: "<green>"
   accent: "<#AAFFAA>"
@@ -10,15 +12,13 @@ negative:
   style: "<red>"
   accent: "<#FFAAAA>"
 warning:
-  style: "<yellow>"
-  accent: "<gold>"
+  style: "<#FF8000>"
+  accent: "<#FFC080>"
 # What matters most, which every value a message inserts takes by itself, and what matters least
 accent: "<white>"
 hint: "<dark_gray><italic>"
 # What a player can click, a command or a link: the text of every <click> takes it by itself
-clickable: "<aqua><underlined>"
+clickable: "<aqua><italic>"
 # The name before a value, and the title of a list or of a page, as VersatiaCore's commands show them
 label: "<gold>"
 heading: "<aqua><bold>"
-# The tag in front of the server's chat messages: nothing until the server writes its own
-serverTag: ""

@@ -19,7 +19,7 @@ internal object TagNames {
         override fun has(name: String) = name != CLICK && STANDARD.has(name)
     }
 
-    /** The names a plugin's tag and a style may have, in either case: `serverTag` and `servertag` are one name. */
+    /** The names a plugin's tag and a style may have, in either case: `questTag` and `questtag` are one name. */
     val OWN = Regex("[A-Za-z0-9_-]+")
 
     /** Starts the names of the tags the parser makes itself. */

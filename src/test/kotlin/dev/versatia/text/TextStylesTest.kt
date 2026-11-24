@@ -139,12 +139,12 @@ class TextStylesTest {
             neutral: "<gray>"
             negative:
               style: "<red>"
-              serverTag: "<dark_red>[Realm]</dark_red> "
-            serverTag: "<gold><bold>[Realm]</bold></gold> "
+              realmTag: "<dark_red>[Realm]</dark_red> "
+            realmTag: "<gold><bold>[Realm]</bold></gold> "
             shopTag: "[Shop] "
             unset: ""
         """)
-        val welcome = text.parse("<neutral><serverTag/>Welcome to the server!")
+        val welcome = text.parse("<neutral><realmTag/>Welcome to the server!")
 
         assertEquals(listOf("[Realm]" to NamedTextColor.GOLD, " Welcome to the server!" to NamedTextColor.GRAY), shownColours(welcome))
         assertEquals(
@@ -159,11 +159,11 @@ class TextStylesTest {
         )
         assertEquals(
             listOf("[Realm]" to NamedTextColor.DARK_RED, " No permission." to NamedTextColor.RED),
-            shownColours(text.parse("<negative><servertag/>No permission.")),
+            shownColours(text.parse("<negative><realmtag/>No permission.")),
             "a tone may give the tag a look of its own, and a name is found in either case",
         )
         assertEquals(listOf("Welcome!" to NamedTextColor.GRAY), shownColours(text.parse("<neutral><unset/>Welcome!")), "an empty tag shows nothing, not even its space")
-        assertEquals("[Realm] Welcome, Steve!", PlainTextComponentSerializer.plainText().serialize(text.parse("<neutral><serverTag/>Welcome, {p}!", arg("p", player("Steve")))))
+        assertEquals("[Realm] Welcome, Steve!", PlainTextComponentSerializer.plainText().serialize(text.parse("<neutral><realmTag/>Welcome, {p}!", arg("p", player("Steve")))))
     }
 
     @Test
@@ -176,7 +176,7 @@ class TextStylesTest {
     @Test
     fun `the text of a click takes the clickable style of its place, and a style inside the click wins over what it defines`() {
         val text = styled("""
-            clickable: "<aqua><underlined>"
+            clickable: "<aqua><italic>"
             neutral: "<gray>"
             negative: "<red>"
             warning:
@@ -185,10 +185,10 @@ class TextStylesTest {
         """)
         val accept = "<click:run_command:'/a'>[Accept]</click>"
 
-        assertEquals(listOf("Offer: gray", "[Accept] aqua underlined", " now. gray"), looks(text.parse("<neutral>Offer: $accept now.")))
+        assertEquals(listOf("Offer: gray", "[Accept] aqua italic", " now. gray"), looks(text.parse("<neutral>Offer: $accept now.")))
         assertEquals(listOf("[Accept] gold"), looks(text.parse("<warning>$accept")), "a tone's own, replacing the whole look")
-        assertEquals(listOf("[Decline] red underlined"), looks(text.parse("<click:run_command:'/d'><negative>[Decline]</negative></click>")), "a style inside the click")
-        assertEquals(listOf("Steve aqua underlined"), looks(text.parse("<click:run_command:'/a'>{who}</click>", arg("who", text("Steve", NamedTextColor.YELLOW)))), "a value it holds alone")
+        assertEquals(listOf("[Decline] red italic"), looks(text.parse("<click:run_command:'/d'><negative>[Decline]</negative></click>")), "a style inside the click")
+        assertEquals(listOf("Steve aqua italic"), looks(text.parse("<click:run_command:'/a'>{who}</click>", arg("who", text("Steve", NamedTextColor.YELLOW)))), "a value it holds alone")
         assertEquals(
             listOf(ClickEvent.runCommand("/trade accept Steve")),
             text.parse("<neutral><click:run_command:'/trade accept {name}'>[Accept]</click>", arg("name", "Steve")).deep().mapNotNull { it.clickEvent() }.toList(),

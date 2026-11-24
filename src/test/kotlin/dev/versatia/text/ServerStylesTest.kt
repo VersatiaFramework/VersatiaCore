@@ -194,22 +194,21 @@ class ServerStylesTest {
 
         assertEquals(
             setOf(
-                "neutral", "positive", "positive.accent", "negative", "negative.accent", "warning", "warning.accent", "accent", "hint",
-                "clickable", "label", "heading", "serverTag",
+                "neutral", "neutral.accent", "positive", "positive.accent", "negative", "negative.accent", "warning", "warning.accent", "accent", "hint",
+                "clickable", "label", "heading",
             ),
             shipped("/styles.yml").paths.keys,
         )
-        assertEquals("", shipped("/styles.yml").paths["serverTag"], "no server has a tag until it writes one")
         assertEquals(emptySet(), shipped("/resources/styles.yml").paths.keys)
     }
 
     @Test
     fun `a default is there whatever case the file writes its name in, and one that is added keeps the plugin's spelling`() {
-        val styles = serverStyles(server, "servertag: \"[Realm] \"", defaults = "serverTag: \"\"")
-        assertEquals("servertag: \"[Realm] \"", file.readText(), "the server's own spelling of a shared name is the same style")
+        val styles = serverStyles(server, "realmtag: \"[Realm] \"", defaults = "realmTag: \"\"")
+        assertEquals("realmtag: \"[Realm] \"", file.readText(), "the server's own spelling of a shared name is the same style")
 
-        start(styles, "Shop", "shopTag: \"[Shop] \"\nServerTag: \"[Shop's] \"")
-        assertEquals("servertag: \"[Realm] \"\n\n# Default styles of Shop\nshopTag: \"[Shop] \"\n", file.readText())
-        assertEquals(mapOf("servertag" to "[Realm] ", "shopTag" to "[Shop] "), styles.sheet.paths)
+        start(styles, "Shop", "shopTag: \"[Shop] \"\nRealmTag: \"[Shop's] \"")
+        assertEquals("realmtag: \"[Realm] \"\n\n# Default styles of Shop\nshopTag: \"[Shop] \"\n", file.readText())
+        assertEquals(mapOf("realmtag" to "[Realm] ", "shopTag" to "[Shop] "), styles.sheet.paths)
     }
 }

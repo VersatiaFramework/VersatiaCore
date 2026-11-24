@@ -66,25 +66,25 @@ class StyleFileTest {
     @Test
     fun `a name in another case is the same name, shown as the file first writes it`() {
         val sheet = read("""
-            serverTag: "[Realm] "
+            realmTag: "[Realm] "
             negative:
               style: "<red>"
-              ServerTag: "<dark_red>[Realm]</dark_red> "
+              RealmTag: "<dark_red>[Realm]</dark_red> "
             Negative.accent: "<gold>"
         """)
 
         assertEquals(
-            listOf("serverTag" to "[Realm] ", "negative" to "<red>", "negative.ServerTag" to "<dark_red>[Realm]</dark_red> ", "negative.accent" to "<gold>"),
+            listOf("realmTag" to "[Realm] ", "negative" to "<red>", "negative.RealmTag" to "<dark_red>[Realm]</dark_red> ", "negative.accent" to "<gold>"),
             sheet.paths.toList(),
         )
-        assertEquals(listOf("accent", "negative", "serverTag"), sheet.names.toList())
-        assertTrue("SERVERTAG" in sheet.names)
-        assertEquals("[Realm] ", sheet.resolve("servertag", emptyList())?.snippet?.source)
-        assertEquals("<dark_red>[Realm]</dark_red> ", sheet.resolve("serverTag", listOf(sheet.root.getValue("negative")))?.snippet?.source)
-        assertEquals(setOf("negative"), sheet.scopesOf("SERVERTAG"))
-        assertEquals(emptyList(), sheet.lacking(read("servertag: \"x\"\nNEGATIVE: { Accent: \"y\" }")))
+        assertEquals(listOf("accent", "negative", "realmTag"), sheet.names.toList())
+        assertTrue("REALMTAG" in sheet.names)
+        assertEquals("[Realm] ", sheet.resolve("realmtag", emptyList())?.snippet?.source)
+        assertEquals("<dark_red>[Realm]</dark_red> ", sheet.resolve("realmTag", listOf(sheet.root.getValue("negative")))?.snippet?.source)
+        assertEquals(setOf("negative"), sheet.scopesOf("REALMTAG"))
+        assertEquals(emptyList(), sheet.lacking(read("realmtag: \"x\"\nNEGATIVE: { Accent: \"y\" }")))
         assertEquals(listOf("negative.hint"), sheet.lacking(read("negative: { hint: \"<gray>\", accent: \"y\" }")))
-        assertEquals("style \"servertag\" is defined twice in styles.yml", failure("serverTag: \"a\"\nservertag: \"b\""))
+        assertEquals("style \"realmtag\" is defined twice in styles.yml", failure("realmTag: \"a\"\nrealmtag: \"b\""))
     }
 
     @Test

@@ -110,8 +110,8 @@ keys are names that apply only inside it, and a dotted key (`positive.accent`) t
 nesting. A name must be a tag name of its own (`[A-Za-z0-9_-]+`, no standard MiniMessage tag, not
 `style`, not `versatia-...`), a path is defined once, and an empty section is an error. MiniMessage
 hands every tag name over in lower case, so a sheet keys its styles by `TagNames.key` and each
-`StyleNode` keeps the spelling the file writes, for what is shown and appended: `serverTag` and
-`servertag` are one name. Every
+`StyleNode` keeps the spelling the file writes, for what is shown and appended: `questTag` and
+`questtag` are one name. Every
 style is compiled once into a `StyleSnippet`: the text followed by a private content tag is
 parsed, with the unknown tags noted as above and legacy colour codes rejected; when the result is
 the content alone with a style on it, the snippet is that `Style` and applying it costs no
@@ -179,9 +179,8 @@ reads what is there; a default deleted from the file comes back at the plugin's 
 reload, like an extracted file. Constant texts are kept per sheet, so a new sheet drops them.
 
 VersatiaCore ships the styles every plugin shares as the `styles.yml` at the root of its own JAR:
-the tones `positive`, `negative`, `warning` and `neutral`, `accent`, `hint`, `clickable`, `label`,
-`heading`, and `serverTag`, a style that holds text, written self-closing in front of a message and
-shipped empty.
+the tones `positive`, `negative`, `warning` and `neutral`, `accent`, `hint`, `clickable`, `label`
+and `heading`.
 `ServerStyles.reload` adopts them like any plugin's right after reading the file, so
 they are in the server file before another plugin starts, a plugin's default for one of them is
 never used, and a deleted one comes back at VersatiaCore's next start or reload.

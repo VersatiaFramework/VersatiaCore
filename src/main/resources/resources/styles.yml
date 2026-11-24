@@ -9,21 +9,20 @@
 #   hint                                   what matters least, or what to do next
 #   clickable                              what a player can click; the text of every <click> takes it
 #   label, heading                         the name before a value; the title of a list or of a page
-#   serverTag                              the tag in front of the server's chat messages
 #
-# The tag is a style that holds text. It is empty, so messages show none, until you write yours,
-# with the space that follows it:
+# A style may hold text, such as a tag of your own in front of messages, with the space that
+# follows it; a message shows it where it writes <realmTag/>:
 #
-#   serverTag: "<gold><bold>[Realm]</bold></gold> "
+#   realmTag: "<gold><bold>[Realm]</bold></gold> "
 #
 # A section is a scope. Its "style" is the section's own style; its other names apply only inside
 # that tag, where the nearest scope wins:
 #
 #   warning:
-#     style: "<yellow>"
-#     accent: "<gold>"        # <accent>, and every value, inside <warning>
+#     style: "<#FF8000>"
+#     accent: "<#FFC080>"     # <accent>, and every value, inside <warning>
 #
-# A dotted key says the same on one line: warning.accent: "<gold>"
+# A dotted key says the same on one line: warning.accent: "<#FFC080>"
 #
 # The game's own things take the style named after them instead of the accent, once you define
 # one here: player, entity, item, location, world.
