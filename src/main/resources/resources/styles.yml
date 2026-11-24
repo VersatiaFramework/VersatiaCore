@@ -7,6 +7,7 @@
 #   neutral, positive, negative, warning   the tone a chat message opens with
 #   accent                                 what matters most; every value a message fills in takes it
 #   hint                                   what matters least, or what to do next
+#   clickable                              what a player can click; the text of every <click> takes it
 #   label, heading                         the name before a value; the title of a list or of a page
 #   serverTag                              the tag in front of the server's chat messages
 #

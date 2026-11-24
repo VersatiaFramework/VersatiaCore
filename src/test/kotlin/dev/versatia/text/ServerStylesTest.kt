@@ -193,7 +193,10 @@ class ServerStylesTest {
         fun shipped(path: String) = StyleFile(path).read(checkNotNull(ServerStyles::class.java.getResource(path)) { "$path is not shipped" }.readText())
 
         assertEquals(
-            setOf("neutral", "positive", "negative", "warning", "warning.accent", "accent", "hint", "label", "heading", "serverTag"),
+            setOf(
+                "neutral", "positive", "positive.accent", "negative", "negative.accent", "warning", "warning.accent", "accent", "hint",
+                "clickable", "label", "heading", "serverTag",
+            ),
             shipped("/styles.yml").paths.keys,
         )
         assertEquals("", shipped("/styles.yml").paths["serverTag"], "no server has a tag until it writes one")

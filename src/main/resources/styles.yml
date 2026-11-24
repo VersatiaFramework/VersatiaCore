@@ -3,14 +3,20 @@
 
 # The tone a chat message opens with
 neutral: "<gray>"
-positive: "<green>"
-negative: "<red>"
+positive:
+  style: "<green>"
+  accent: "<#AAFFAA>"
+negative:
+  style: "<red>"
+  accent: "<#FFAAAA>"
 warning:
   style: "<yellow>"
   accent: "<gold>"
 # What matters most, which every value a message inserts takes by itself, and what matters least
 accent: "<white>"
 hint: "<dark_gray><italic>"
+# What a player can click, a command or a link: the text of every <click> takes it by itself
+clickable: "<aqua><underlined>"
 # The name before a value, and the title of a list or of a page, as VersatiaCore's commands show them
 label: "<gold>"
 heading: "<aqua><bold>"

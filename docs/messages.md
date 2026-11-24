@@ -135,6 +135,15 @@ Hover text is parsed by MiniMessage as a text of its own while the outer tree is
 built, so its styles start at the top level. A tag registered with `Text.tag` wins over a style of
 its name, and a style tag takes no arguments.
 
+The text of a click takes the style `clickable`. `TextImpl.READER` knows MiniMessage's tags but
+`<click>` (`TagNames.STANDARD_BUT_CLICK`), so `ArgumentResolver` answers it: MiniMessage's own tag
+reads the arguments, and where the sheet defines `clickable` at the top level the resolver returns
+a `ClickTag`, a `StyleTag` of `clickable` whose opening component also carries the click event.
+The click is thus a scope like any style: a style inside it is nearer and wins, a tone's own
+`clickable` applies inside the tone, and a value that is all the click holds takes no style of its
+own. A click a style's snippet holds is MiniMessage's own, read with the sheet, and a click a value
+brings stays the value's.
+
 A value takes a style by itself. `ArgumentResolver` renders a brace into a `Rendered`, the
 components with the style names each may take (a collection keeps them per element), once per
 call: the style of its `Presented.look()`, a built-in one after its type
@@ -170,8 +179,9 @@ reads what is there; a default deleted from the file comes back at the plugin's 
 reload, like an extracted file. Constant texts are kept per sheet, so a new sheet drops them.
 
 VersatiaCore ships the styles every plugin shares as the `styles.yml` at the root of its own JAR:
-the tones `positive`, `negative`, `warning` and `neutral`, `accent`, `hint`, and `serverTag`, a
-style that holds text, written self-closing in front of a message and shipped empty.
+the tones `positive`, `negative`, `warning` and `neutral`, `accent`, `hint`, `clickable`, `label`,
+`heading`, and `serverTag`, a style that holds text, written self-closing in front of a message and
+shipped empty.
 `ServerStyles.reload` adopts them like any plugin's right after reading the file, so
 they are in the server file before another plugin starts, a plugin's default for one of them is
 never used, and a deleted one comes back at VersatiaCore's next start or reload.

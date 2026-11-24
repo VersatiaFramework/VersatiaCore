@@ -1,11 +1,23 @@
 package dev.versatia.text
 
+import net.kyori.adventure.text.minimessage.Context
+import net.kyori.adventure.text.minimessage.tag.resolver.ArgumentQueue
 import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver
 import net.kyori.adventure.text.minimessage.tag.standard.StandardTags
 
 /** What the parser knows of tag names, whatever the text. */
 internal object TagNames {
     val STANDARD: TagResolver = StandardTags.defaults()
+
+    /** MiniMessage's `<click>`, which the parser answers itself, so that the text of a click takes a style of its own. */
+    const val CLICK = "click"
+
+    /** MiniMessage's own tags but [CLICK]. */
+    val STANDARD_BUT_CLICK: TagResolver = object : TagResolver {
+        override fun resolve(name: String, arguments: ArgumentQueue, ctx: Context) = if (name == CLICK) null else STANDARD.resolve(name, arguments, ctx)
+
+        override fun has(name: String) = name != CLICK && STANDARD.has(name)
+    }
 
     /** The names a plugin's tag and a style may have, in either case: `serverTag` and `servertag` are one name. */
     val OWN = Regex("[A-Za-z0-9_-]+")

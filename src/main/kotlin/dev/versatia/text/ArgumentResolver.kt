@@ -3,6 +3,7 @@ package dev.versatia.text
 import java.util.IdentityHashMap
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.ComponentLike
+import net.kyori.adventure.text.event.ClickEvent
 import net.kyori.adventure.text.minimessage.Context
 import net.kyori.adventure.text.minimessage.tag.Inserting
 import net.kyori.adventure.text.minimessage.tag.Modifying
@@ -17,10 +18,11 @@ import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer
  * the input through [Substitution]: a brace in the text becomes a private MiniMessage tag that
  * [resolve] answers, one inside a tag argument the value's plain text. A brace is rendered once,
  * walking one property per segment. The resolver also serves the registered argument tags and the
- * styles of [sheet], which are tags that learn the styles around them from MiniMessage's tree, and
- * notes every tag nobody answers. MiniMessage swallows what a tag throws and prints a tag it does
- * not know, so both end up in [failure], which the caller throws. While [checking], a text is read
- * for its tags alone: nothing is rendered and no argument tag is called.
+ * styles of [sheet], which are tags that learn the styles around them from MiniMessage's tree, gives
+ * the text of every `<click>` the style [CLICKABLE], and notes every tag nobody answers. MiniMessage
+ * swallows what a tag throws and prints a tag it does not know, so both end up in [failure], which
+ * the caller throws. While [checking], a text is read for its tags alone: nothing is rendered and
+ * no argument tag is called.
  */
 internal class ArgumentResolver(
     private val values: Map<String, Any?>,
@@ -47,9 +49,9 @@ internal class ArgumentResolver(
 
     fun substitute(input: String) = Substitution({ it in tags || it in sheet.names || TagNames.STANDARD.has(it) || noted(it) }, ::placeholder, ::plain).rewrite(input)
 
-    override fun has(name: String) = name in placeholders || name in tags || name in sheet.names || noted(name)
+    override fun has(name: String) = name == TagNames.CLICK || name in placeholders || name in tags || name in sheet.names || noted(name)
 
-    /** A registered tag wins over a style of its name: it is the plugin's own. */
+    /** A registered tag wins over a style of its name: it is the plugin's own. MiniMessage's `<click>` comes here too, the reader leaving it out. */
     override fun resolve(name: String, arguments: ArgumentQueue, ctx: Context): Tag? {
         placeholders[name]?.let { return it() }
         val tag = tags[name]
@@ -61,11 +63,15 @@ internal class ArgumentResolver(
                 failed(e)
                 null
             }
+            name == TagNames.CLICK -> TagNames.STANDARD.resolve(name, arguments, ctx)?.let(::clickable)
             name !in sheet.names -> null
             arguments.hasNext() -> null.also { failed(TextException("<$name> is a style, which takes no arguments")) }
             else -> StyleTag(name)
         }
     }
+
+    /** MiniMessage's own [click] tag as a [ClickTag] where the server defines [CLICKABLE]; as it is otherwise, or where its event cannot be read. */
+    private fun clickable(click: Tag) = (click as? Inserting)?.value()?.clickEvent()?.takeIf { CLICKABLE in sheet.root }?.let(::ClickTag) ?: click
 
     /** Notes [name] as a tag nobody answers, unless MiniMessage does or it was never meant as one; always false. */
     private fun noted(name: String): Boolean {
@@ -158,7 +164,7 @@ internal class ArgumentResolver(
      * children, exactly as the tags of the style would. A style that needs its content first is
      * applied in [apply], which then answers for the content too.
      */
-    private inner class StyleTag(private val name: String) : Inserting, Modifying {
+    private open inner class StyleTag(private val name: String) : Inserting, Modifying {
         private var snippet: StyleSnippet? = null
 
         override fun visit(current: Node, depth: Int) {
@@ -175,6 +181,15 @@ internal class ArgumentResolver(
             depth == 0 -> snippet?.around(current) ?: current
             else -> Component.empty()
         }
+    }
+
+    /**
+     * MiniMessage's `<click>`, its content in the style [CLICKABLE] of the place it stands in, as if
+     * that style's tag held it: a style inside the click is nearer and wins, and a value that is all
+     * the click holds takes no style of its own.
+     */
+    private inner class ClickTag(private val event: ClickEvent<*>) : StyleTag(CLICKABLE) {
+        override fun value() = super.value().clickEvent(event)
     }
 
     /**
@@ -210,6 +225,9 @@ internal class ArgumentResolver(
         /** An [ARGUMENT] that no odd run of backslashes escapes. */
         val UNESCAPED_ARGUMENT = Regex("""(?<!\\)(?:\\\\)*${ARGUMENT.pattern}""")
         const val PLACEHOLDER = "${TagNames.RESERVED}argument-"
+
+        /** The style the text of every `<click>` takes, where the server defines one. */
+        const val CLICKABLE = "clickable"
 
         private val NOTHING = Tag.selfClosingInserting(Component.empty())
     }

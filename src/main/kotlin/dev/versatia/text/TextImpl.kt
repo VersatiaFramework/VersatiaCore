@@ -88,7 +88,10 @@ internal class TextImpl(private val styles: ServerStyles, val server: ServerPres
         val TAG_NAME_IN_TEXT = Regex("<[!/]?([A-Za-z0-9_-]+)")
         const val CONSTANTS = 1024
 
-        /** MiniMessage leaving its tree as built, so that [ValueMarks] still sees which tags hold a value alone. */
-        val READER = MiniMessage.builder().postProcessor { it }.build()
+        /**
+         * MiniMessage leaving its tree as built, so that [ValueMarks] still sees which tags hold a
+         * value alone, and leaving `<click>` to [ArgumentResolver].
+         */
+        val READER = MiniMessage.builder().tags(TagNames.STANDARD_BUT_CLICK).postProcessor { it }.build()
     }
 }
